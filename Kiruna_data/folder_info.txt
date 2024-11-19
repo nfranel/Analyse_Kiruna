@@ -1,0 +1,2 @@
+Folder containing Kiruna flight data.
+Data are mandatory for the analyse and are not given on the git.
