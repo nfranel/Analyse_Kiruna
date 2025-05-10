@@ -12,8 +12,11 @@
 #include <Rtypes.h>
 #include <string>
 #include <fstream>
+#include <array>
 #include <TApplication.h>
-
+#include <vector>
+#include <unordered_set>
+#include <iomanip>
 #include <TTreeIndex.h>
 #include <TLeaf.h>
 
@@ -46,7 +49,7 @@ std::vector<size_t> sort_index(const std::vector<Double_t>& vec) {
 
 ////    !!! Voir these de Anne Meyer pour le fonctionnement des DSSSD
 
-void ADCFormating(const uint16_t *ener1, const uint16_t *ener2, Double_t &energy_adc, uint16_t *adc_channels, const std::string detector, const Double_t *correction, const uint16_t *pedestals) {
+void ADCFormatingIJCLAB(const uint16_t *ener1, const uint16_t *ener2, Double_t &energy_adc, uint16_t *adc_channels, const std::string detector, const Double_t *correction, const uint16_t *pedestals) {
     //
     // Function used to transform the energy in ADC in different channels into keV energies
     // Size of ener_1 and ener_2 is not fixed as it might change with different detectors
@@ -91,12 +94,30 @@ void ADCFormating(const uint16_t *ener1, const uint16_t *ener2, Double_t &energy
             adc_channels[i+32] = ener2[i];
         }
     } else if (detector == "cea") {
-        std::cerr << " Error : cea detector not implemented yet " << std::endl;
+        energy_adc = 0.;
+        for (uint64_t i = 0; i<32; i++){
+            adc_channels[i] = ener1[i];
+            adc_channels[i+32] = ener2[i];
+        }
     } else {
         std::cerr << " ERROR : Unknown detector : " << detector << " \n detector must be maud, dssd, cea or ucd" << std::endl;
     }
     return;
 }
+
+void ADCFormatingCEA(const Double_t *ener1, const Double_t *ener2, Double_t &energy_adc, uint16_t *adc_channels) {
+    //
+    // Function used to transform the energy in ADC in different channels into keV energies
+    // Size of ener_1 and ener_2 is not fixed as it might change with different detectors
+    //
+    energy_adc = 0.;
+    for (uint64_t i = 0; i<32; i++){
+        adc_channels[i] = static_cast<uint16_t>(ener1[i]);
+        adc_channels[i+32] = static_cast<uint16_t>(ener2[i]);
+    }
+    return;
+}
+
 
 Double_t ADCtoEnergyMaud(const Double_t ener_adc, const Double_t temp, const Double_t correction) {
     Double_t energy;
@@ -136,7 +157,29 @@ Double_t ADCtoEnergyDSSD(const Double_t *adc_channels, Double_t *adc_channels_ca
     return energy;
 }
 
-void ADC_temp_correction(const uint16_t *adc_channels, Double_t *adc_channels_corr, const Double_t temp) {
+Double_t ADCtoEnergyCEA(const Double_t *adc_channels, Double_t *adc_channels_calib, const Double_t temp, const Double_t coeffs[64][8]) {
+    Double_t energy = 0.;
+    Double_t coef_a;
+    Double_t coef_b;
+    Double_t coef_c;
+    Double_t coef_d;
+    for (uint64_t i = 0; i<64; i++){
+        coef_a = coeffs[i][0] + coeffs[i][1] * temp;
+        coef_b = coeffs[i][2] + coeffs[i][3] * temp;
+        coef_c = coeffs[i][4] + coeffs[i][5] * temp;
+        coef_d = coeffs[i][6] + coeffs[i][7] * temp;
+        adc_channels_calib[i] = 1000 * (coef_a + coef_b * adc_channels[i] + coef_c * adc_channels[i] * adc_channels[i] + coef_d * adc_channels[i] * adc_channels[i] * adc_channels[i]);
+
+        if (adc_channels_calib[i] > 0.) {
+            energy += adc_channels_calib[i];
+        } else {
+            adc_channels_calib[i] = 0.;
+        }
+    }
+    return energy;
+}
+
+void ADCTempCorrectionDSSD(const uint16_t *adc_channels, Double_t *adc_channels_corr, const Double_t temp) {
     std::vector<Double_t> peak_a = {0.036716, 0.131445, 0.062599, 0.095734, 0.102531, 0.104413, 0.140915, 0.136512, 0.098898, 0.16447, 0.174816, 0.166083, 0.189503, 0.16458, 0.134001, 0.18001, 0.181169, 0.202537, 0.184703, 0.193654, 0.181026, 0.194065, 0.18256, 0.172182, 0.462903, 0.12925, 0.202558, 0.172908, 0.095815, 0.08862, 0.070518, 0.101594};
     std::vector<Double_t> peak_b = {90.271101, 76.100973, 76.508661, 141.380324, 74.719918, 73.90952, 137.309308, 72.493295, 74.396593, 73.718072, 72.328855, 71.554289, 71.762032, 73.482051, 72.323857, 71.98295, 72.441124, 71.740608, 72.07533, 71.566482, 73.003177, 71.484204, 71.522837, 71.590043, 130.925712, 238.847331, 73.02934, 72.792331, 145.007932, 258.649297, 201.89576, 84.206379};
     std::vector<Double_t> bulk_a = {-1.015557, -0.787783, -1.262267, -0.779096, -0.98369, -0.46709, -0.47222, -0.3871, -0.683492, -0.649886, -0.301839, -0.648335, -0.422, -0.627697, -0.632843, -0.542424, -0.494638, -0.489997, -0.354492, -0.711634, -0.504241, -0.661699, -0.501675, -0.374338, -0.351215, -0.183012, -0.211629, -0.498082, -0.676097, -0.409012, -1.041214, -0.5786};
@@ -222,11 +265,90 @@ void ADC_temp_correction(const uint16_t *adc_channels, Double_t *adc_channels_co
 //    std::exit(EXIT_SUCCESS);
 }
 
-Double_t ADCtoEnergyCEA(const Double_t ener_adc, const Double_t temp) {
-    Double_t energy;
-    energy = 0.;
-    std::cerr << " Error : cea detector not implemented yet " << std::endl;
-    return energy;
+void ADCTempCorrectionCEA(const uint16_t *adc_channels, Double_t *adc_channels_corr, const Double_t temp) {
+    std::vector<Double_t> peak_a = {0.036716, 0.131445, 0.062599, 0.095734, 0.102531, 0.104413, 0.140915, 0.136512, 0.098898, 0.16447, 0.174816, 0.166083, 0.189503, 0.16458, 0.134001, 0.18001, 0.181169, 0.202537, 0.184703, 0.193654, 0.181026, 0.194065, 0.18256, 0.172182, 0.462903, 0.12925, 0.202558, 0.172908, 0.095815, 0.08862, 0.070518, 0.101594};
+    std::vector<Double_t> peak_b = {90.271101, 76.100973, 76.508661, 141.380324, 74.719918, 73.90952, 137.309308, 72.493295, 74.396593, 73.718072, 72.328855, 71.554289, 71.762032, 73.482051, 72.323857, 71.98295, 72.441124, 71.740608, 72.07533, 71.566482, 73.003177, 71.484204, 71.522837, 71.590043, 130.925712, 238.847331, 73.02934, 72.792331, 145.007932, 258.649297, 201.89576, 84.206379};
+    std::vector<Double_t> bulk_a = {-1.015557, -0.787783, -1.262267, -0.779096, -0.98369, -0.46709, -0.47222, -0.3871, -0.683492, -0.649886, -0.301839, -0.648335, -0.422, -0.627697, -0.632843, -0.542424, -0.494638, -0.489997, -0.354492, -0.711634, -0.504241, -0.661699, -0.501675, -0.374338, -0.351215, -0.183012, -0.211629, -0.498082, -0.676097, -0.409012, -1.041214, -0.5786};
+    std::vector<Double_t> bulk_b = {575.174915, 610.581457, 590.756867, 573.391298, 591.800576, 579.43737, 569.640771, 577.149503, 587.798512, 584.149709, 573.035371, 569.42912, 569.633759, 584.4602, 565.89034, 577.212994, 580.591879, 570.205355, 572.179833, 574.642222, 576.478365, 567.970641, 567.467592, 564.339591, 561.814468, 557.396933, 582.679154, 574.200107, 570.794763, 567.394666, 584.253568, 581.42604};
+
+    std::vector<std::vector<Double_t>> peak_adc = {
+        {90.6881, 78.1919, 77.8653, 143.262, 76.5146, 75.6742, 140.12, 74.6548, 76.2541, 76.4875, 75.1697, 74.4551, 74.7664, 76.3069, 74.7252, 74.9019, 75.4198, 74.94, 75.1563, 74.6333, 76.0561, 74.5017, 74.3554, 74.2974, 137.674, 247.856, 76.2419, 75.631, 147.43, 264.252, 203.583, 85.1128},
+        {90.57, 77.1416, 77.668, 141.743, 75.7145, 74.991, 138.108, 73.698, 75.2459, 74.8408, 73.4489, 72.4524, 72.8914, 74.5194, 73.2314, 73.0635, 73.4874, 72.9512, 73.1201, 72.7235, 74.0617, 72.6125, 72.6595, 72.5875, 133.888, 234.842, 74.2762, 73.8409, 144.966, 255.983, 201.791, 85.6977},
+        {90.9995, 76.1788, 75.962, 141.226, 74.6853, 73.4866, 137.142, 72.5588, 74.3386, 73.7731, 72.4255, 71.7156, 71.8925, 73.5476, 72.356, 72.189, 72.5503, 71.9745, 72.0912, 71.7015, 73.1307, 71.6362, 71.672, 71.9685, 131.468, 231.438, 73.2042, 72.8193, 144.455, 246.698, 201.248, 85.2755},
+        {89.7645, 75.4348, 75.448, 141.042, 74.0429, 72.7642, 136.739, 71.4654, 73.7001, 72.8441, 71.4768, 70.7566, 70.7234, 72.6347, 71.6124, 71.1803, 71.6746, 70.8928, 71.2551, 70.7174, 72.1329, 70.6096, 70.864, 70.4891, 130.188, 239.726, 71.995, 71.8133, 144.38, 257.287, 201.445, 83.9695},
+        {89.7303, 74.8247, 74.5934, 140.731, 73.516, 71.5873, 136.298, 70.7879, 73.2497, 72.1315, 70.7434, 69.9521, 70.2194, 72.0507, 71.0668, 70.487, 70.9175, 70.0817, 70.5895, 70.0644, 71.4679, 70.0643, 69.8823, 69.8783, 128.24, 241.254, 71.2397, 71.1628, 144.368, 266.332, 201.429, 83.1174},
+        {89.8969, 74.6727, 76.6052, 140.26, 73.6671, 74.3619, 135.797, 71.505, 73.3877, 71.981, 70.5166, 69.8374, 69.9852, 71.6267, 70.7812, 69.9119, 70.4011, 69.4496, 70.0035, 69.39, 70.9461, 69.4047, 69.4954, 69.8965, 124.349, 237.261, 70.9427, 71.0418, 144.145, 259.125, 201.261, 82.7058}
+    };
+
+    std::vector<std::vector<Double_t>> bulk_adc = {
+        {557.566, 597.997, 570.104, 561.902, 572.592, 571.81, 560.698, 564.902, 577.489, 575.975, 563.334, 551.994, 562.456, 577.246, 560.419, 568.872, 573.038, 561.024, 571.325, 564.126, 568.062, 558.912, 552.399, 557.039, 549.489, 551.144, 576.482, 563.05, 561.278, 558.804, 567.102, 571.466},
+        {567.124, 607.184, 584.25, 564.591, 586.862, 576.591, 568.159, 578.319, 581.216, 575.968, 570.129, 568.391, 564.915, 578.611, 560.316, 573.044, 577.639, 568.38, 567.366, 567.335, 575.128, 566.384, 564.694, 561.687, 562.314, 556.455, 582.583, 571.691, 564.398, 563.34, 577.824, 578.473},
+        {577.552, 605.255, 582.335, 575.562, 588.193, 580.338, 565.023, 574.373, 592.037, 584.452, 575.433, 565.617, 565.535, 583.684, 559.379, 572.968, 577.012, 565.329, 566.038, 577.297, 574.193, 559.948, 568.789, 564.763, 555.852, 558.849, 579.779, 571.832, 568.674, 571.789, 579.991, 576.884},
+        {575.727, 610.195, 595.82, 576.242, 598.649, 580.954, 573.912, 579.731, 587.524, 588.091, 575.836, 573.634, 577.043, 585.668, 564.369, 584.861, 586.256, 573.501, 575.1, 576.88, 573.712, 566.595, 573.038, 566.131, 564.437, 560.755, 586.95, 577.668, 569.882, 565.453, 592.644, 587.238},
+        {583.992, 622.168, 594.827, 580.657, 603.231, 581.755, 571.914, 583.017, 594.566, 588.984, 577.451, 572.019, 573.215, 586.812, 572.397, 579.549, 581.471, 575.038, 572.039, 580.899, 578.067, 572.33, 569.481, 567.506, 568.859, 559.371, 586.73, 582.554, 580.716, 571.619, 584.588, 587.59},
+        {587.595, 618.91, 608.909, 582.329, 602.151, 585.741, 575.807, 580.956, 596.215, 592.131, 575.036, 578.206, 573.377, 593.885, 574.711, 583.793, 587.282, 575.743, 578.279, 583.472, 584.176, 577.523, 573.344, 568.363, 563.685, 558.673, 583.518, 577.16, 577.321, 572.408, 598.239, 586.734}
+    };
+    size_t temperature_ite;
+
+    if (temp >= 10) {
+        temperature_ite = 0;
+    } else if (temp < 10 && temp >= 5) {
+        temperature_ite = 1;
+    } else if (temp < 5 && temp >= 0) {
+        temperature_ite = 2;
+    } else if (temp < 0 && temp >= -5) {
+        temperature_ite = 3;
+    } else if (temp < -5 && temp >= -10) {
+        temperature_ite = 4;
+    } else if (temp < -10) {
+        temperature_ite = 5;
+    }
+    Double_t peak_adc_temp;
+    Double_t bulk_adc_temp;
+    Double_t peak_adc_25;
+    Double_t bulk_adc_25;
+    Double_t corr_peak;
+    Double_t corr_bulk;
+    Double_t corr_a;
+    Double_t corr_b;
+//    std::cout << "temp : " << temp << std::endl;
+    for (size_t i = 0; i < 32; i++) {
+        adc_channels_corr[i] = adc_channels[i];
+        // Correcting the n face channels if it's != 0
+        if (adc_channels[i + 32] == 0) {
+            adc_channels_corr[i + 32] = adc_channels[i + 32];
+        } else {
+//            std::cout << "chan : " << i << std::endl;
+            // Peak and bulk ADC at T temp and 25°, obtained with affine function from fitting raw spectra
+            peak_adc_temp = peak_b[i] + peak_a[i] * temp;
+            bulk_adc_temp = bulk_b[i] + bulk_a[i] * temp;
+//            peak_adc_temp = peak_adc[temperature_ite][i];
+//            bulk_adc_temp = bulk_adc[temperature_ite][i];
+            peak_adc_25 = peak_b[i] + peak_a[i] * 25;
+            bulk_adc_25 = bulk_b[i] + bulk_a[i] * 25;
+//            std::cout << "peak_adc_temp : " << peak_adc_temp << std::endl;
+//            std::cout << "peak_adc_25 : " << peak_adc_25 << std::endl;
+//            std::cout << "bulk_adc_temp : " << bulk_adc_temp << std::endl;
+//            std::cout << "bulk_adc_25 : " << bulk_adc_25 << std::endl;
+//            // Correction applicable to peak and bulk
+//            corr_peak = peak_adc_25 / peak_adc_temp;
+//            corr_bulk = bulk_adc_25 / bulk_adc_temp;
+////            std::cout << "corr_peak : " << corr_peak << std::endl;
+////            std::cout << "corr_bulk : " << corr_bulk << std::endl;
+            // Using these 2 correction points to estimate an affine correction function corr = f(ADC)
+//            corr_a = (corr_bulk - corr_peak) / (bulk_adc_temp - peak_adc_temp);
+//            corr_b = corr_bulk - corr_a * bulk_adc_temp;
+            corr_a = (bulk_adc_25 - peak_adc_25) / (bulk_adc_temp - peak_adc_temp);
+            corr_b = bulk_adc_25 - corr_a * bulk_adc_temp;
+//            std::cout << "corr slope : " << corr_a << std::endl;
+//            std::cout << "corr b origin : " << corr_b << std::endl;
+//            adc_channels_corr[i + 32] = adc_channels[i + 32] * (corr_a * adc_channels[i + 32] + corr_b);
+            adc_channels_corr[i + 32] = corr_a * adc_channels[i + 32] + corr_b;
+//            std::cout << "adc_channels : " << adc_channels[i + 32] << std::endl;
+//            std::cout << "adc_channels_corr : " << adc_channels_corr[i + 32] << std::endl;
+        }
+    }
+//    std::exit(EXIT_SUCCESS);
 }
 
 void ExtractTemperatureValues(std::vector<Double_t> &tempvec, std::vector<uint32_t> &tsvec, const std::string timestamp_filename) {
@@ -420,7 +542,7 @@ void ExtractDSSDCoefs(Double_t coeffs[64][8], const std::string dssd_p_coefs_fil
 
 void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detector) {
     if (detector == "maud") {
-        std::map<int32_t, std::pair<int32_t, int32_t>> geometry {
+        static const std::map<int32_t, std::pair<int32_t, int32_t>> geometry {
         { 0, {5,3}}, { 1, {6,3}}, { 2, {7,3}}, { 3, {7,2}}, { 4, {7,1}}, { 5, {6,2}}, { 6, {6,1}}, { 7, {7,0}},
         { 8, {5,0}}, { 9, {6,0}}, {10, {4,0}}, {11, {5,2}}, {12, {5,1}}, {13, {4,3}}, {14, {4,2}}, {15, {4,1}},
         {16, {4,7}}, {17, {4,6}}, {18, {5,7}}, {19, {4,5}}, {20, {4,4}}, {21, {5,6}}, {22, {7,7}}, {23, {6,7}},
@@ -432,7 +554,7 @@ void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detect
         };
 
         // CARE the disposition remains pretty hard to precise : with this disposition y is the thickness, x goes from left to right and z from top to bottom
-        size_t PixIDx[8][8] {
+        static const size_t PixIDx[8][8] {
         {54, 56, 58, 60, 35, 37, 39, 41},
         {52, 62, 51, 50, 34, 33, 36, 43},
         {49, 63, 57, 53, 32, 40, 38, 42},
@@ -457,8 +579,8 @@ void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detect
         Double_t zoffset = 0.;
         uint32_t adcsum = 0;
 //        std::cout << "A tester !!!" << std::endl;
-        for (int64_t iidx : {geometry[max_idx].first - 1, geometry[max_idx].first + 1}) {
-            for (int64_t jidx : {geometry[max_idx].second - 1, geometry[max_idx].second + 1}) {
+        for (int64_t iidx : {geometry.at(max_idx).first - 1, geometry.at(max_idx).first + 1}) {
+            for (int64_t jidx : {geometry.at(max_idx).second - 1, geometry.at(max_idx).second + 1}) {
                 if (iidx >= 0 && iidx < 8 && jidx >= 0 && jidx < 8) {
                     position[0] += (jidx * 0.6375 - 2.23125) * static_cast<Double_t>(adc_channels[PixIDx[iidx][jidx]]);
                     position[2] += (-iidx * 0.6375 + 2.23125) * static_cast<Double_t>(adc_channels[PixIDx[iidx][jidx]]);
@@ -466,7 +588,7 @@ void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detect
                 }
             }
         }
-        position[0] = position[0] / static_cast<Double_t>(adcsum) + xoffset;
+        position[0] = position[0] / static_cast<Double_t>(adcsum);
         position[1] = yoffset + 0.5;
         position[2] = position[2] / static_cast<Double_t>(adcsum) + zoffset;
     } else if (detector == "dssd") {
@@ -474,11 +596,30 @@ void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detect
         position[1] = 0.;
         position[2] = 0.;
     } else if (detector == "cea") {
-        std::cerr << " Error : cea detector not implemented yet " << std::endl;
+        position[0] = 0.;
+        position[1] = 0.;
+        position[2] = 0.;
     } else {
         std::cerr << " ERROR : Unknown detector : " << detector << " \n detector must be maud, dssd, cea or ucd" << std::endl;
     }
     return;
+}
+
+void GetUCDPosition(Double_t position_final[3], const Short_t position_init) {
+    static const std::map<int32_t, std::array<int32_t, 3>> geometry {
+    { 0, {0, 1, 2}}, { 1, {0, 1, 2}}, { 2, {0, 1, 2}}, { 3, {0, 1, 2}},
+    { 4, {0, 1, 2}}, { 5, {0, 1, 2}}, { 6, {0, 1, 2}}, { 7, {0, 1, 2}},
+    { 8, {0, 1, 2}}, { 9, {0, 1, 2}}, {10, {0, 1, 2}}, {11, {0, 1, 2}},
+    {12, {0, 1, 2}}, {13, {0, 1, 2}}, {14, {0, 1, 2}}, {15, {0, 1, 2}},
+    };
+
+    Double_t xoffset = 0.;
+    Double_t yoffset = 0.;
+    Double_t zoffset = 0.;
+
+    position_final[0] = geometry.at(position_init - 1)[0] + xoffset;
+    position_final[1] = geometry.at(position_init - 1)[1] + yoffset;
+    position_final[2] = geometry.at(position_init - 1)[2] + zoffset;
 }
 
 void CombineDSSSDEvents(const std::string &init_tree_name, const std::string &final_tree_name) {
@@ -680,7 +821,7 @@ void CombineDSSSDEvents(const std::string &init_tree_name, const std::string &fi
     file_final->Close();
 }
 
-void CorrectTimes(const std::string &init_tree_name, const std::string &final_tree_name, std::string detector, uint32_t &glitch_corr_count, uint32_t &minor_corr_count) {
+void CorrectTimesIJCLAB(const std::string &init_tree_name, const std::string &final_tree_name, std::string detector, uint32_t &glitch_corr_count, uint32_t &minor_corr_count) {
     //
     // Function used to correct the timestamps of the root files.
     //
@@ -701,18 +842,17 @@ void CorrectTimes(const std::string &init_tree_name, const std::string &final_tr
     // Declaring tree_final
     TTree* tree_final = nullptr;
 
-//    std::string namecalibfile = "Kiruna_data/calib_maud/HG_Piedestaux_&_Corrections_module labo.txt";
     std::string namecalibfile = "Kiruna_data/calib_maud/HG_Piedestaux_&_Corrections_module_VOL_05juin24.txt";
     Double_t maudcorrections[64];
     uint16_t maudpedestals[64];
 
     // Connect to the branches and opening new root tree according to the detector
     if (detector == "maud") {
-        // connect Maud branches
+        // connect timestamp Maud branches
         tree_init->SetBranchAddress("timestamp",   &ts);
         tree_init->SetBranchAddress("pps_cpt",     &pps_cpt);
         tree_init->SetBranchAddress("pps_info",    &gps);
-        //// To validate for energy
+        // connect energy Maud branches
         tree_init->SetBranchAddress("hg0",   &ener_1);
         tree_init->SetBranchAddress("hg1",   &ener_2);
 
@@ -736,10 +876,10 @@ void CorrectTimes(const std::string &init_tree_name, const std::string &final_tr
         const std::string delim = " \t"; // " " and tab as delimitor
         std::string corrstring;
         if (std::getline(maudcalibfile, maudline)) {
-            std::cout << "Reading Maud calibration file" << std::endl; // Afficher chaque ligne
-            std::cout << "First line giving tokens : " << maudline << std::endl; // Afficher chaque ligne
+            std::cout << "Reading Maud calibration file" << std::endl;
+            std::cout << "First line giving tokens : " << maudline << std::endl;
         } else {
-            std::cerr << "Unable to get the first line of the maud calibration file" << std::endl; // Afficher chaque ligne
+            std::cerr << "Unable to get the first line of the maud calibration file" << std::endl;
         }
         while (std::getline(maudcalibfile, maudline)) {
             tokencounting = 0;
@@ -767,11 +907,11 @@ void CorrectTimes(const std::string &init_tree_name, const std::string &final_tr
         maudcalibfile.close();
 
     } else if (detector == "dssd") {
-        // connect dssd branches
+        // connect timestamp dssd branches
         tree_init->SetBranchAddress("timestamp",   &ts);
         tree_init->SetBranchAddress("pps_cpt",     &pps_cpt);
         tree_init->SetBranchAddress("pps_info",    &gps);
-        //// To validate for energy
+        // connect energy dssd branches
         tree_init->SetBranchAddress("sample_p",   &ener_1);
         tree_init->SetBranchAddress("sample_n",   &ener_2);
 
@@ -782,10 +922,6 @@ void CorrectTimes(const std::string &init_tree_name, const std::string &final_tr
             return;
         }
         tree_final = new TTree("Events", "Corrected DSSD tree");
-    } else if (detector == "cea") {
-        std::cerr << " Error : cea detector not implemented yet " << std::endl;
-//    } else if (detector == "ucd") {
-//        std::cerr << " Error : ucd detector not implemented yet " << std::endl;
     } else {
         std::cerr << " ERROR : Unknown detector : " << detector << " \n detector must be maud, dssd, cea or ucd" << std::endl;
     }
@@ -862,8 +998,130 @@ void CorrectTimes(const std::string &init_tree_name, const std::string &final_tr
         }
         gps_corr = gps;
         time_corr = pps_cpt_corr + ts_corr/40.e6;
-        ADCFormating(ener_1, ener_2, energy_adc, adc_channels, detector, maudcorrections, maudpedestals);
+        ADCFormatingIJCLAB(ener_1, ener_2, energy_adc, adc_channels, detector, maudcorrections, maudpedestals);
         FindPosition(adc_channels, position, detector);
+        tree_final->Fill();
+        old_ts = ts;
+    }
+    file_final->Write();
+    file_final->Close();
+}
+
+void CorrectTimesCEA(const std::string &init_tree_name, const std::string &final_tree_name, uint32_t &glitch_corr_count, uint32_t &minor_corr_count) {
+    //
+    // Function used to correct the timestamps of the root files.
+    //
+    // Extraction of the root tree
+    TChain *tree_init = new TChain("D1a");
+    tree_init->Add(init_tree_name.c_str());
+//    tree_init->Show(100);
+
+    // Variables used to obtain tree values
+    Double_t ts;
+    Double_t pps_cpt;
+    Double_t gps;
+    Double_t ener_1[32];
+    Double_t ener_2[32];
+
+    // Declaring file_final
+    TFile* file_final = nullptr;
+    // Declaring tree_final
+    TTree* tree_final = nullptr;
+
+    // connect timestamp cea branches
+    tree_init->SetBranchAddress("timestamp1",   &ts);
+    tree_init->SetBranchAddress("timestamp2",   &pps_cpt);
+//        tree_init->SetBranchAddress("pps_info",    &gps);
+    gps = 0;
+    // connect energy cea branches
+    for (uint64_t i = 0; i<32; i++){
+        tree_init->SetBranchAddress((std::string("pix") + std::to_string(i + 1)).c_str(),   &ener_1[i]);
+        tree_init->SetBranchAddress((std::string("pix") + std::to_string(i + 33)).c_str(),   &ener_2[i]);
+    }
+
+    file_exists(final_tree_name);
+    file_final = new TFile(final_tree_name.c_str(), "RECREATE", "Corrected root file for CEA");
+    if (!file_final || file_final->IsZombie()) {
+        std::cerr << "Error opening file!" << std::endl;
+        return;
+    }
+    tree_final = new TTree("Events", "Corrected CEA tree");
+
+    // Variables to create the new tree + linking them to the tree
+    uint32_t ts_init;
+    uint32_t pps_cpt_init;
+    uint32_t ts_corr;
+    uint32_t pps_cpt_corr;
+    uint32_t gps_corr;
+    Double_t time_corr;
+    //// To validate for energy
+    Double_t energy_adc;
+    uint16_t adc_channels[64];
+    Double_t position[3];
+    tree_final->Branch("ts_init", &ts_init, "ts_init/i");
+    tree_final->Branch("pps_cpt_init", &pps_cpt_init, "pps_cpt_init/i");
+    tree_final->Branch("ts_corr", &ts_corr, "ts_corr/i");
+    tree_final->Branch("pps_cpt_corr", &pps_cpt_corr, "pps_cpt_corr/i");
+    tree_final->Branch("gps_corr", &gps_corr, "gps_corr/i");
+    tree_final->Branch("time_corr", &time_corr, "time_corr/D");
+    //// To validate for energy
+    tree_final->Branch("energy_adc", &energy_adc, "energy_adc/D");
+    tree_final->Branch("adc_channels", &adc_channels, "adc_channels[64]/s");
+    tree_final->Branch("position", &position, "position[3]/D");
+
+    // Variables not saved, used for correcting the time series and creating the new tree
+    uint32_t correction_counter = 0;
+    uint32_t old_ts=0;
+    uint32_t next_ts;
+    std::cout << "\n=======================================================================================" << std::endl;
+    std::cout << " Correction of cea timestamps "<< std::endl;
+    std::cout << "=======================================================================================" << std::endl;
+    uint64_t nentries = tree_init->GetEntries();
+    for (uint64_t i = 0; i<nentries; i++) {
+        // Loading the tree entry
+        tree_init->GetEntry(i);
+        // Getting the initial, uncorrected, tree values
+        pps_cpt_init = static_cast<uint32_t>(pps_cpt);
+        ts_init = static_cast<uint32_t>(ts);
+        // Starting the correction if needed
+        if (ts >= 40.e6) {
+            ts_corr = static_cast<uint32_t>(ts) - 40.e6;
+            tree_init->GetEntry(i+1);
+            next_ts = ts;
+            tree_init->GetEntry(i);
+            if (old_ts < 40.e6 && next_ts >= 40.e6) {
+                correction_counter += 1;
+                pps_cpt_corr = static_cast<uint32_t>(pps_cpt) + correction_counter;
+                std::cout << "cea correction on entry " << i << ", pps count " << pps_cpt << " to " << pps_cpt_corr << std::endl;
+                glitch_corr_count += 1;
+            } else if (old_ts < 40.e6 && next_ts < 40.e6){
+                std::cout << "ts threshold exceeded but might be due to delay in saving the value, correction applied for this value only, verification is needed to see if there is no shift compared to the GPS clock" << std::endl;
+                pps_cpt_corr = static_cast<uint32_t>(pps_cpt) + correction_counter + 1;
+                std::cout << " Value for ts and pps before local correction : " << ts << " " << pps_cpt + correction_counter << " and after : " << ts_corr <<  " " << pps_cpt_corr << std::endl;
+                tree_init->GetEntry(i+1);
+                if (static_cast<Double_t>(ts)/40.e6+static_cast<Double_t>(pps_cpt)+static_cast<Double_t>(correction_counter) > static_cast<Double_t>(ts_corr)/40.e6+static_cast<Double_t>(pps_cpt_corr)) {
+                    std::cout << "     Successful correction : the next entry time is greater than the corrected one : " << std::endl;
+                    std::cout << "     Next entry has the following ts and pps : " << ts << " " << pps_cpt + correction_counter << std::endl;
+                } else {
+                    std::cerr << "     Correction failed : the next entry has a time smaller than the corrected time - Another correction should be used or suppressing the value. " << std::endl;
+                    std::cerr << "     Value of next entry (not corrected) : " << ts << " " << pps_cpt + correction_counter << std::endl;
+                }
+                tree_init->GetEntry(i);
+                minor_corr_count += 1;
+            } else {
+                pps_cpt_corr = static_cast<uint32_t>(pps_cpt) + correction_counter;
+            }
+        } else if (ts >= 80.e6) {
+            throw std::runtime_error("ERROR : 2 pps incrementations not done in a row, code update needed to solve this");
+        } else {
+            ts_corr = static_cast<uint32_t>(ts);
+            pps_cpt_corr = static_cast<uint32_t>(pps_cpt) + correction_counter;
+        }
+        gps_corr = static_cast<uint32_t>(gps);
+        time_corr = pps_cpt_corr + ts_corr/40.e6;
+        ADCFormatingCEA(ener_1, ener_2, energy_adc, adc_channels);
+        FindPosition(adc_channels, position, "cea");
+
         tree_final->Fill();
         old_ts = ts;
     }
@@ -947,6 +1205,8 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
     Double_t position_final[3];
     Double_t energy_final;
     Double_t temp_final;
+    int8_t det_id;
+
     tree_final->Branch("ts_init", &ts_init_noabs, "ts_init/i");
     tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/i");
     tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/i");
@@ -961,9 +1221,12 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
     tree_final->Branch("position", &position_final, "position[3]/D");
     tree_final->Branch("energy", &energy_final, "energy/D");
     tree_final->Branch("temperature", &temp_final, "temperature/D");
+    tree_final->Branch("det_id", &det_id, "det_id/b");
 
 
 //    Finds the first entry where the absolute time gps is 97252 (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
+//    This correction can also be done using the pps_cpt_corr at the first value of 78721 and for pps_cpt_init at the value 78699
+//    --  These values of pps were obtained using the GPS time, to adapt this function to the cea case where there is no GPS timestamp
     uint32_t ref = 97252;
     uint32_t inc_index = tree_init->GetEntries();
     for (uint32_t i=0; i<tree_init->GetEntries(); i++) {
@@ -1028,6 +1291,7 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
             temp_final = 0.;
 //            temp_corr = 1.;
             energy_final = ADCtoEnergyMaud(energy_adc_init, temp_final, temp_corr);
+            det_id = 7;
 
             tree_final->Fill();
         }
@@ -1068,7 +1332,7 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
 
             FindTemperature(pps_cpt_corr_abs, temp_final, temp_vec_init_idx, tstemp_vec, temperature_vec);
 //            temp_final = 0.;
-            ADC_temp_correction(adc_channels_init, adc_channels_corr, temp_final);
+            ADCTempCorrectionDSSD(adc_channels_init, adc_channels_corr, temp_final);
             // This line for applying the temperature shift before calibration
             energy_final = ADCtoEnergyDSSD(adc_channels_corr, adc_channels_calib, 25, coeffs); //!! c'est comme si c'était à 25°
             // This line for applying the calibration to raw channels
@@ -1076,10 +1340,174 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
 //                adc_channels_init_double[i] = static_cast<Double_t>(adc_channels_init[i]);
 //            }
 //            energy_final = ADCtoEnergyDSSD(adc_channels_init_double, adc_channels_calib, temp_final, coeffs);
+            det_id = 2;
+
             tree_final->Fill();
         }
     } else {
         std::cerr << " ERROR : Unknown detector : " << detector << " \n detector must be maud or dssd" << std::endl;
+    }
+    file_init->Close();
+    file_final->Write();
+    file_final->Close();
+}
+
+void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &final_tree_name, uint32_t &abs_pps_time_ref) {
+    //
+    // Function used to correct the align the timestamp with a common time origin
+    //
+
+    // Extraction of the root tree
+    file_exists(init_tree_name);
+    auto file_init = new TFile(init_tree_name.c_str());
+    if (!file_init || file_init->IsZombie()) {
+        std::cerr << "Error while opening the file." << std::endl;
+    }
+    auto tree_init = (TTree*) file_init->Get("Events");
+
+    // Variables to read the initial tree
+    uint32_t ts_init;
+    uint32_t pps_cpt_init;
+    uint32_t ts_corr;
+    uint32_t pps_cpt_corr;
+    uint32_t gps_corr;
+    Double_t time_corr;
+    Double_t energy_adc_init;
+    uint16_t adc_channels_init[64];
+    Double_t position_init[3];
+
+    tree_init->SetBranchAddress("ts_init",       &ts_init);
+    tree_init->SetBranchAddress("pps_cpt_init",  &pps_cpt_init);
+    tree_init->SetBranchAddress("ts_corr",       &ts_corr);
+    tree_init->SetBranchAddress("pps_cpt_corr",  &pps_cpt_corr);
+    tree_init->SetBranchAddress("gps_corr",      &gps_corr);
+    tree_init->SetBranchAddress("time_corr",     &time_corr);
+    tree_init->SetBranchAddress("energy_adc",    &energy_adc_init);
+    tree_init->SetBranchAddress("adc_channels",  &adc_channels_init);
+    tree_init->SetBranchAddress("position",      &position_init);
+
+    // Declaring file_final and tree_final
+    TFile* file_final = nullptr;
+    TTree* tree_final = nullptr;
+
+    // Opening new root tree
+    file_exists(final_tree_name);
+    file_final = new TFile(final_tree_name.c_str(), "RECREATE", "Abs time root file for CEA");
+    if (!file_final || file_final->IsZombie()) {
+        std::cerr << "Error opening file!" << std::endl;
+        return;
+    }
+    tree_final = new TTree("Events", "Absolute time CEA tree");
+
+    // Variables to create the new tree + linking them to the tree
+    uint32_t ts_init_noabs;
+    uint32_t pps_cpt_init_noabs;
+    uint32_t pps_cpt_corr_noabs;
+    uint32_t gps_corr_noabs;
+    uint32_t ts_corr_abs;
+    uint32_t pps_cpt_corr_abs;
+    uint32_t pps_cpt_nocorr_abs;
+    uint32_t gps_corr_abs;
+    Double_t time_corr_abs;
+    Double_t energy_adc_final;
+    uint16_t adc_channels_final[64];
+    Double_t position_final[3];
+    Double_t energy_final;
+    Double_t temp_final;
+    int8_t det_id;
+
+    Double_t adc_channels_calib[64];
+    Double_t adc_channels_corr[64];
+    Double_t adc_channels_init_double[64];
+
+    tree_final->Branch("ts_init", &ts_init_noabs, "ts_init/i");
+    tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/i");
+    tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/i");
+    tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/i");
+    tree_final->Branch("ts_corr_abs", &ts_corr_abs, "ts_corr_abs/i");
+    tree_final->Branch("pps_cpt_corr_abs", &pps_cpt_corr_abs, "pps_cpt_corr_abs/i");
+    tree_final->Branch("pps_cpt_init_abs", &pps_cpt_nocorr_abs, "pps_cpt_init_abs/i");
+    tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/i");
+    tree_final->Branch("time_corr_abs", &time_corr_abs, "time_corr_abs/D");
+    tree_final->Branch("energy_adc", &energy_adc_final, "energy_adc/D");
+    tree_final->Branch("adc_channels", &adc_channels_final, "adc_channels[64]/s");
+    tree_final->Branch("position", &position_final, "position[3]/D");
+    tree_final->Branch("energy", &energy_final, "energy/D");
+    tree_final->Branch("temperature", &temp_final, "temperature/D");
+    tree_final->Branch("det_id", &det_id, "det_id/b");
+
+    tree_final->Branch("adc_channels_calib", &adc_channels_calib, "adc_channels_calib[64]/D");
+    tree_final->Branch("adc_channels_corr", &adc_channels_corr, "adc_channels_corr[64]/D");
+
+//    Finds the first entry where the absolute time gps is 97252 (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
+//    This correction can also be done using the pps_cpt_corr at the first value of 78721 and for pps_cpt_init at the value 78699
+//    --  These values of pps were obtained using the GPS time, to adapt this function to the cea case where there is no GPS timestamp
+//    uint32_t ref = 97252;
+//    uint32_t inc_index = tree_init->GetEntries();
+//    for (uint32_t i=0; i<tree_init->GetEntries(); i++) {
+//        tree_init->GetEntry(i);
+//        if (gps_corr - abs_gps_time_ref == ref){
+//            std::cout << "GPS absolute time of " << ref << " incremented at entry " << i << " - Returning this value." << std::endl;
+//            std::cout << "Absolute time chosen for aligning PPS and GPS : " << gps_corr - abs_gps_time_ref << std::endl;
+//            inc_index = i;
+//            break;
+//            }
+//    }
+//    if (inc_index == tree_init->GetEntries()){
+//        std::cerr << "ERROR : No entry found for the searched GPS absolute time." << std::endl;
+//    }
+
+//    tree_init->GetEntry(inc_index);
+//    uint32_t abs_pps_time_ref = pps_cpt_corr - gps_corr + abs_gps_time_ref;
+//    std::cout << "      Time correction applied to PSS  :  " << abs_pps_time_ref << "      Corresponding entry index : " << inc_index << std::endl;
+//    std::cout << "      Values of the PPS and GPS value  " << pps_cpt_corr - abs_pps_time_ref << "    " << gps_corr - abs_gps_time_ref << std::endl;
+    std::cout << "      Time correction applied to PSS  :  " << abs_pps_time_ref << std::endl;
+
+//    std::vector<uint32_t> tstemp_vec;
+//    std::vector<Double_t> temperature_vec;
+//    uint64_t temp_vec_init_idx = 0;
+//    std::string tstemp_filename = "Kiruna_data/calib_cea/cea_time_vs_temp_flight.txt";
+//    ExtractTemperatureValues(temperature_vec, tstemp_vec, tstemp_filename);
+
+    Double_t coeffs[64][8];
+
+    std::string cea_p_coefs_filename = "Kiruna_data/calib_cea/pside.calib";
+    std::string cea_n_coefs_filename = "Kiruna_data/calib_cea/nside.calib";
+    ExtractDSSDCoefs(coeffs, cea_p_coefs_filename, cea_n_coefs_filename);
+
+    uint64_t nentries = tree_init->GetEntries();
+    for (uint64_t i = 0; i<nentries; i++) {
+        tree_init->GetEntry(i);
+
+        ts_init_noabs = ts_init;
+        pps_cpt_init_noabs = pps_cpt_init;
+        pps_cpt_corr_noabs = pps_cpt_corr;
+        gps_corr_noabs = gps_corr;
+        ts_corr_abs = ts_corr;
+        pps_cpt_corr_abs = pps_cpt_corr - abs_pps_time_ref;
+        pps_cpt_nocorr_abs = pps_cpt_init - abs_pps_time_ref;
+        gps_corr_abs = pps_cpt_corr_abs;
+        time_corr_abs = pps_cpt_corr_abs + ts_corr_abs/40.e6;
+        energy_adc_final = energy_adc_init;
+        for (uint64_t i = 0; i<64; i++){
+            adc_channels_final[i] = adc_channels_init[i];
+        }
+        position_final[0] = position_init[0];
+        position_final[1] = position_init[1];
+        position_final[2] = position_init[2];
+
+//        FindTemperature(pps_cpt_corr_abs, temp_final, temp_vec_init_idx, tstemp_vec, temperature_vec);
+        temp_final = 0.;
+        ADCTempCorrectionCEA(adc_channels_init, adc_channels_corr, temp_final);
+        // This line for applying the temperature shift before calibration
+        energy_final = ADCtoEnergyCEA(adc_channels_corr, adc_channels_calib, 25, coeffs); //!! c'est comme si c'était à 25°
+        // This line for applying the calibration to raw channels
+//            for (uint64_t i = 0; i<64; i++){
+//                adc_channels_init_double[i] = static_cast<Double_t>(adc_channels_init[i]);
+//            }
+//            energy_final = ADCtoEnergyDSSD(adc_channels_init_double, adc_channels_calib, temp_final, coeffs);
+        det_id = 1;
+        tree_final->Fill();
     }
     file_init->Close();
     file_final->Write();
@@ -1107,11 +1535,13 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
     int32_t gps_corr;
     Double_t time_corr;
     Double_t energy_init;
+    Short_t position_init;
     tree_init->SetBranchAddress("Time_sec",  &pps_cpt_init);
     tree_init->SetBranchAddress("Time_sec_corrected",  &pps_cpt_corr);
     tree_init->SetBranchAddress("Time_gps",      &gps_corr);
     tree_init->SetBranchAddress("Time",     &time_corr);
     tree_init->SetBranchAddress("Energy",        &energy_init);
+    tree_init->SetBranchAddress("Argmax",        &position_init);
 
     // Declaring file_final and tree_final
     TFile* file_final = nullptr;
@@ -1163,6 +1593,7 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
     int32_t gps_corr_abs;
     Double_t time_corr_abs;
     Double_t energy_final;
+    Double_t position_final[3];
     tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/I");
     tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/I");
     tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/I");
@@ -1171,6 +1602,7 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
     tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/I");
     tree_final->Branch("time_corr_abs", &time_corr_abs, "time_corr_abs/D");
     tree_final->Branch("energy", &energy_final, "energy/D");
+    tree_final->Branch("position", &position_final, "position[3]/D");
 
 //    Finds the first entry where the absolute time gps is 97252 (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
     int32_t ref = 97252;
@@ -1205,7 +1637,7 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
         gps_corr_abs = gps_corr - static_cast<int32_t>(abs_gps_time_ref);
         time_corr_abs = time_corr;
         energy_final = energy_init;
-
+        GetUCDPosition(position_final, position_init);
         tree_final->Fill();
     }
     file_init->Close();
@@ -1790,6 +2222,7 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     int32_t gps_corr_abs_a;
     Double_t time_corr_abs_a;
     Double_t energy_final_a;
+    Double_t position_final_a[3];
     tree_a->SetBranchAddress("pps_cpt_init", &pps_cpt_init_noabs_a);
     tree_a->SetBranchAddress("pps_cpt_corr", &pps_cpt_corr_noabs_a);
     tree_a->SetBranchAddress("gps_corr", &gps_corr_noabs_a);
@@ -1798,6 +2231,7 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     tree_a->SetBranchAddress("gps_corr_abs", &gps_corr_abs_a);
     tree_a->SetBranchAddress("time_corr_abs", &time_corr_abs_a);
     tree_a->SetBranchAddress("energy", &energy_final_a);
+    tree_a->Branch("position", &position_final_a, "position[3]/D");
 
     file_exists(tree_name_b);
     auto file_b = new TFile(tree_name_b.c_str());
@@ -1815,6 +2249,8 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     int32_t gps_corr_abs_b;
     Double_t time_corr_abs_b;
     Double_t energy_final_b;
+    Double_t position_final_b[3];
+
     tree_b->SetBranchAddress("pps_cpt_init", &pps_cpt_init_noabs_b);
     tree_b->SetBranchAddress("pps_cpt_corr", &pps_cpt_corr_noabs_b);
     tree_b->SetBranchAddress("gps_corr", &gps_corr_noabs_b);
@@ -1823,6 +2259,7 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     tree_b->SetBranchAddress("gps_corr_abs", &gps_corr_abs_b);
     tree_b->SetBranchAddress("time_corr_abs", &time_corr_abs_b);
     tree_b->SetBranchAddress("energy", &energy_final_b);
+    tree_b->Branch("position", &position_final_b, "position[3]/D");
 
     file_exists(tree_name_c);
     auto file_c = new TFile(tree_name_c.c_str());
@@ -1840,6 +2277,8 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     int32_t gps_corr_abs_c;
     Double_t time_corr_abs_c;
     Double_t energy_final_c;
+    Double_t position_final_c[3];
+
     tree_c->SetBranchAddress("pps_cpt_init", &pps_cpt_init_noabs_c);
     tree_c->SetBranchAddress("pps_cpt_corr", &pps_cpt_corr_noabs_c);
     tree_c->SetBranchAddress("gps_corr", &gps_corr_noabs_c);
@@ -1848,6 +2287,7 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     tree_c->SetBranchAddress("gps_corr_abs", &gps_corr_abs_c);
     tree_c->SetBranchAddress("time_corr_abs", &time_corr_abs_c);
     tree_c->SetBranchAddress("energy", &energy_final_c);
+    tree_c->Branch("position", &position_final_c, "position[3]/D");
 
     file_exists(tree_name_d);
     auto file_d = new TFile(tree_name_d.c_str());
@@ -1865,6 +2305,8 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     int32_t gps_corr_abs_d;
     Double_t time_corr_abs_d;
     Double_t energy_final_d;
+    Double_t position_final_d[3];
+
     tree_d->SetBranchAddress("pps_cpt_init", &pps_cpt_init_noabs_d);
     tree_d->SetBranchAddress("pps_cpt_corr", &pps_cpt_corr_noabs_d);
     tree_d->SetBranchAddress("gps_corr", &gps_corr_noabs_d);
@@ -1873,7 +2315,7 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     tree_d->SetBranchAddress("gps_corr_abs", &gps_corr_abs_d);
     tree_d->SetBranchAddress("time_corr_abs", &time_corr_abs_d);
     tree_d->SetBranchAddress("energy", &energy_final_d);
-
+    tree_d->Branch("position", &position_final_d, "position[3]/D");
 
     // Declaring file_final and tree_final
     TFile* file_final = nullptr;
@@ -1895,6 +2337,8 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     int32_t gps_corr_abs;
     Double_t time_corr_abs;
     Double_t energy_final;
+    Double_t position_final[3];
+    int8_t det_id;
     tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/I");
     tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/I");
     tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/I");
@@ -1903,6 +2347,8 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/I");
     tree_final->Branch("time_corr_abs", &time_corr_abs, "time_corr_abs/D");
     tree_final->Branch("energy", &energy_final, "energy/D");
+    tree_final->Branch("position", &position_final, "position[3]/D");
+    tree_final->Branch("det_id", &det_id, "det_id/b");
 
     // Combining the UCD trees
     uint64_t nentries_a = tree_a->GetEntries();
@@ -1951,6 +2397,10 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
             gps_corr_abs = gps_corr_abs_a;
             time_corr_abs = time_corr_abs_a;
             energy_final = energy_final_a;
+            position_final[0] = position_final_a[0];
+            position_final[1] = position_final_a[1];
+            position_final[2] = position_final_a[2];
+            det_id = 3;
         } else if (sorted_ite < nentries_a + nentries_b) {
             tree_b->GetEntry(sorted_ite - nentries_a);
             pps_cpt_init_noabs = pps_cpt_init_noabs_b;
@@ -1961,6 +2411,10 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
             gps_corr_abs = gps_corr_abs_b;
             time_corr_abs = time_corr_abs_b;
             energy_final = energy_final_b;
+            position_final[0] = position_final_b[0];
+            position_final[1] = position_final_b[1];
+            position_final[2] = position_final_b[2];
+            det_id = 4;
         } else if (sorted_ite < nentries_a + nentries_b + nentries_c) {
             tree_c->GetEntry(sorted_ite - nentries_a - nentries_b);
             pps_cpt_init_noabs = pps_cpt_init_noabs_c;
@@ -1971,6 +2425,10 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
             gps_corr_abs = gps_corr_abs_c;
             time_corr_abs = time_corr_abs_c;
             energy_final = energy_final_c;
+            position_final[0] = position_final_c[0];
+            position_final[1] = position_final_c[1];
+            position_final[2] = position_final_c[2];
+            det_id = 5;
         } else {
             tree_d->GetEntry(sorted_ite - nentries_a - nentries_b - nentries_c);
             pps_cpt_init_noabs = pps_cpt_init_noabs_d;
@@ -1981,6 +2439,10 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
             gps_corr_abs = gps_corr_abs_d;
             time_corr_abs = time_corr_abs_d;
             energy_final = energy_final_d;
+            position_final[0] = position_final_d[0];
+            position_final[1] = position_final_d[1];
+            position_final[2] = position_final_d[2];
+            det_id = 6;
         }
 
         tree_final->Fill();
@@ -2000,6 +2462,451 @@ void CombineUCDSubDets(const std::string &tree_name_a, const std::string &tree_n
     file_c->Close();
     file_d->Close();
     file_final->Close();
+}
+
+//struct DetectorHit {
+//    uint8_t det_id;     // Detector id
+//    Double_t time;      // absolute corrected time of the trigger
+//    Double_t energy;    // Energy deposit
+//    Double_t pos_x;     // x position
+//    Double_t pos_y;     // y position
+//    Double_t pos_z;     // z position
+//};
+
+struct DetectorTreeStruct {
+    TTree* tree = nullptr;
+    uint64_t nentry = 0;
+    Double_t time = 0;
+    Double_t energy = 0;
+    Double_t pos[3] = {0};
+    uint8_t det_id = 0;
+};
+
+void AttributeValues(Double_t &time, Double_t &energy, Double_t &posx, Double_t &posy, Double_t &posz, char mask[7], std::vector<uint8_t> temp_dets, std::vector<size_t> temp_tree_evnt_id, std::map<uint8_t, size_t> det_id_to_tree_idx, std::array<DetectorTreeStruct, 4> detectorTrees, uint8_t det_id) {
+    uint64_t tree_entry;
+    uint8_t tree_number;
+
+    auto it = std::find(temp_dets.begin(), temp_dets.end(), det_id);
+
+    if (it != temp_dets.end()) {
+        size_t temp_lists_idx = std::distance(temp_dets.begin(), it);
+        if (det_id != temp_dets[temp_lists_idx]) {
+            std::cerr << "Error : the searching for id in temp_dets went wrong" << std::endl;
+        }
+        tree_number = det_id_to_tree_idx.at(det_id);
+        tree_entry = temp_tree_evnt_id[temp_lists_idx];
+        detectorTrees[tree_number].tree->GetEntry(tree_entry);
+        // id found in the temp_dets vector, saving the values
+//        std::cout << "IN THE FUNCTION : " << std::endl;
+//        std::cout << "found det_id and det_id" << static_cast<uint32_t>(temp_dets[temp_lists_idx]) << " " << static_cast<uint32_t>(det_id) << std::endl;
+//        std::cout << "tree_number : " << static_cast<uint32_t>(tree_number) << " rank : "<< tree_entry << std::endl;
+//        std::cout << "rank in the temp list " << temp_lists_idx << std::endl;
+//        std::cout << "time " << detectorTrees[tree_number].time << " " << std::endl;
+//        std::cout << "energy " << detectorTrees[tree_number].energy << std::endl;
+//        std::cout << "pos_x " << detectorTrees[tree_number].pos[0] << std::endl;
+//        std::cout << "pos_y " << detectorTrees[tree_number].pos[1] << std::endl;
+//        std::cout << "pos_z " << detectorTrees[tree_number].pos[2] << std::endl;
+
+        mask[det_id - 1] = 1;
+        time = detectorTrees[tree_number].time;
+        energy = detectorTrees[tree_number].energy;
+        posx = detectorTrees[tree_number].pos[0];
+        posy = detectorTrees[tree_number].pos[1];
+        posz = detectorTrees[tree_number].pos[2];
+    } else {
+        // id not in temp_dets vector, saving default
+        mask[det_id - 1] = 0;
+        time = -999;
+        energy = -999;
+        posx = -999;
+        posy = -999;
+        posz = -999;
+    }
+
+}
+
+void MakeWholeDataTree(const std::string &fname_final_tree, const std::string &fname_cea_corr_abs, const std::string &fname_dssd_corr_abs, const std::string &fname_ucd_corr_abs, const std::string &fname_maud_corr_abs) {
+    // Detectors are recognized by their id : cea 1, dssd 2, ucd 3, 4, 5, 6 and maud 7
+
+    // Extraction of the CEA root tree
+    file_exists(fname_cea_corr_abs);
+    auto file_cea = new TFile(fname_cea_corr_abs.c_str());
+    if (!file_cea || file_cea->IsZombie()) {
+        std::cerr << "Error while opening the file." << std::endl;
+    }
+    // Extraction of the DSSD root tree
+    file_exists(fname_dssd_corr_abs);
+    auto file_dssd = new TFile(fname_dssd_corr_abs.c_str());
+    if (!file_dssd || file_dssd->IsZombie()) {
+        std::cerr << "Error while opening the file." << std::endl;
+    }
+    // Extraction of the UCD root tree
+    file_exists(fname_ucd_corr_abs);
+    auto file_ucd = new TFile(fname_ucd_corr_abs.c_str());
+    if (!file_ucd || file_ucd->IsZombie()) {
+        std::cerr << "Error while opening the file." << std::endl;
+    }
+    // Extraction of the MAUD root tree
+    file_exists(fname_maud_corr_abs);
+    auto file_maud = new TFile(fname_maud_corr_abs.c_str());
+    if (!file_maud || file_maud->IsZombie()) {
+        std::cerr << "Error while opening the file." << std::endl;
+    }
+
+    std::array<DetectorTreeStruct, 4> detectorTrees;
+
+    // Filling the structure with the trees
+    detectorTrees[0].tree = (TTree*) file_cea->Get("Events");
+    detectorTrees[0].tree->SetBranchAddress("time_corr_abs", &detectorTrees[0].time);
+    detectorTrees[0].tree->SetBranchAddress("energy", &detectorTrees[0].energy);
+    detectorTrees[0].tree->SetBranchAddress("position", &detectorTrees[0].pos);
+    detectorTrees[0].tree->SetBranchAddress("det_id", &detectorTrees[0].det_id);
+    detectorTrees[0].nentry = detectorTrees[0].tree->GetEntries();
+
+    detectorTrees[1].tree = (TTree*) file_dssd->Get("Events");
+    detectorTrees[1].tree->SetBranchAddress("time_corr_abs", &detectorTrees[1].time);
+    detectorTrees[1].tree->SetBranchAddress("energy", &detectorTrees[1].energy);
+    detectorTrees[1].tree->SetBranchAddress("position", &detectorTrees[1].pos);
+    detectorTrees[1].tree->SetBranchAddress("det_id", &detectorTrees[1].det_id);
+    detectorTrees[1].nentry = detectorTrees[1].tree->GetEntries();
+
+    detectorTrees[2].tree = (TTree*) file_ucd->Get("Events");
+    detectorTrees[2].tree->SetBranchAddress("time_corr_abs", &detectorTrees[2].time);
+    detectorTrees[2].tree->SetBranchAddress("energy", &detectorTrees[2].energy);
+    detectorTrees[2].tree->SetBranchAddress("position", &detectorTrees[2].pos);
+    detectorTrees[2].tree->SetBranchAddress("det_id", &detectorTrees[2].det_id);
+    detectorTrees[2].nentry = detectorTrees[2].tree->GetEntries();
+
+    detectorTrees[3].tree = (TTree*) file_maud->Get("Events");
+    detectorTrees[3].tree->SetBranchAddress("time_corr_abs", &detectorTrees[3].time);
+    detectorTrees[3].tree->SetBranchAddress("energy", &detectorTrees[3].energy);
+    detectorTrees[3].tree->SetBranchAddress("position", &detectorTrees[3].pos);
+    detectorTrees[3].tree->SetBranchAddress("det_id", &detectorTrees[3].det_id);
+    detectorTrees[3].nentry = detectorTrees[3].tree->GetEntries();
+
+//    auto tree_cea = (TTree*) file_cea->Get("Events");
+
+    // Declaring file_final and tree_final
+    TFile* file_final = nullptr;
+    TTree* tree_final = nullptr;
+
+    file_final = new TFile(fname_final_tree.c_str(), "RECREATE", "Full data free file");
+    if (!file_final || file_final->IsZombie()) {
+        std::cerr << "Error opening file!" << std::endl;
+        return;
+    }
+    tree_final = new TTree("Events", "Full data tree file");
+
+    uint8_t event_len;
+    char mask[7];
+
+//    uint8_t cea_det_id;
+    Double_t cea_time;
+    Double_t cea_energy;
+    Double_t cea_posx;
+    Double_t cea_posy;
+    Double_t cea_posz;
+
+//    uint8_t dssd_det_id;
+    Double_t dssd_time;
+    Double_t dssd_energy;
+    Double_t dssd_posx;
+    Double_t dssd_posy;
+    Double_t dssd_posz;
+
+//    uint8_t ucda_det_id;
+    Double_t ucda_time;
+    Double_t ucda_energy;
+    Double_t ucda_posx;
+    Double_t ucda_posy;
+    Double_t ucda_posz;
+
+//    uint8_t ucdb_det_id;
+    Double_t ucdb_time;
+    Double_t ucdb_energy;
+    Double_t ucdb_posx;
+    Double_t ucdb_posy;
+    Double_t ucdb_posz;
+
+//    uint8_t ucdc_det_id;
+    Double_t ucdc_time;
+    Double_t ucdc_energy;
+    Double_t ucdc_posx;
+    Double_t ucdc_posy;
+    Double_t ucdc_posz;
+
+//    uint8_t ucdd_det_id;
+    Double_t ucdd_time;
+    Double_t ucdd_energy;
+    Double_t ucdd_posx;
+    Double_t ucdd_posy;
+    Double_t ucdd_posz;
+
+//    uint8_t maud_det_id;
+    Double_t maud_time;
+    Double_t maud_energy;
+    Double_t maud_posx;
+    Double_t maud_posy;
+    Double_t maud_posz;
+
+//    std::array<Double_t, 5> cea_vals;
+//    std::array<Double_t, 5> dssd_vals;
+//    std::array<Double_t, 5> ucda_vals;
+//    std::array<Double_t, 5> ucdb_vals;
+//    std::array<Double_t, 5> ucdc_vals;
+//    std::array<Double_t, 5> ucdd_vals;
+//    std::array<Double_t, 5> maud_vals;
+
+    tree_final->Branch("event_len", &event_len, "event_len/b");
+//    tree_final->Branch("mask", &mask, "mask[7]/b");
+
+////    tree_final->Branch("cea_det_id", &cea_det_id, "cea_det_id/b");
+//    tree_final->Branch("cea_time", &cea_vals[0], "cea_time/D");
+//    tree_final->Branch("cea_energy", &cea_vals[1], "cea_energy/D");
+//    tree_final->Branch("cea_posx", &cea_vals[2], "cea_posx/D");
+//    tree_final->Branch("cea_posy", &cea_vals[3], "cea_posy/D");
+//    tree_final->Branch("cea_posz", &cea_vals[4], "cea_posz/D");
+//
+////    tree_final->Branch("dssd_det_id", &dssd_det_id, "dssd_det_id/b");
+//    tree_final->Branch("dssd_time", &dssd_vals[0], "dssd_time/D");
+//    tree_final->Branch("dssd_energy", &dssd_vals[1], "dssd_energy/D");
+//    tree_final->Branch("dssd_posx", &dssd_vals[2], "dssd_posx/D");
+//    tree_final->Branch("dssd_posy", &dssd_vals[3], "dssd_posy/D");
+//    tree_final->Branch("dssd_posz", &dssd_vals[4], "dssd_posz/D");
+//
+////    tree_final->Branch("ucda_det_id", &ucda_det_id, "ucda_det_id/b");
+//    tree_final->Branch("ucda_time", &ucda_vals[0], "ucda_time/D");
+//    tree_final->Branch("ucda_energy", &ucda_vals[1], "ucda_energy/D");
+//    tree_final->Branch("ucda_posx", &ucda_vals[2], "ucda_posx/D");
+//    tree_final->Branch("ucda_posy", &ucda_vals[3], "ucda_posy/D");
+//    tree_final->Branch("ucda_posz", &ucda_vals[4], "ucda_posz/D");
+//
+////    tree_final->Branch("ucdb_det_id", &ucdb_det_id, "ucdb_det_id/b");
+//    tree_final->Branch("ucdb_time", &ucdb_vals[0], "ucdb_time/D");
+//    tree_final->Branch("ucdb_energy", &ucdb_vals[1], "ucdb_energy/D");
+//    tree_final->Branch("ucdb_posx", &ucdb_vals[2], "ucdb_posx/D");
+//    tree_final->Branch("ucdb_posy", &ucdb_vals[3], "ucdb_posy/D");
+//    tree_final->Branch("ucdb_posz", &ucdb_vals[4], "ucdb_posz/D");
+//
+////    tree_final->Branch("ucdc_det_id", &ucdc_det_id, "ucdc_det_id/b");
+//    tree_final->Branch("ucdc_time", &ucdc_vals[0], "ucdc_time/D");
+//    tree_final->Branch("ucdc_energy", &ucdc_vals[1], "ucdc_energy/D");
+//    tree_final->Branch("ucdc_posx", &ucdc_vals[2], "ucdc_posx/D");
+//    tree_final->Branch("ucdc_posy", &ucdc_vals[3], "ucdc_posy/D");
+//    tree_final->Branch("ucdc_posz", &ucdc_vals[4], "ucdc_posz/D");
+//
+////    tree_final->Branch("ucdd_det_id", &ucdd_det_id, "ucdd_det_id/b");
+//    tree_final->Branch("ucdd_time", &ucdd_vals[0], "ucdd_time/D");
+//    tree_final->Branch("ucdd_energy", &ucdd_vals[1], "ucdd_energy/D");
+//    tree_final->Branch("ucdd_posx", &ucdd_vals[2], "ucdd_posx/D");
+//    tree_final->Branch("ucdd_posy", &ucdd_vals[3], "ucdd_posy/D");
+//    tree_final->Branch("ucdd_posz", &ucdd_vals[4], "ucdd_posz/D");
+
+////    tree_final->Branch("maud_det_id", &maud_det_id, "maud_det_id/b");
+//    tree_final->Branch("maud_time", &maud_vals[0], "maud_time/D");
+//    tree_final->Branch("maud_energy", &maud_vals[1], "maud_energy/D");
+//    tree_final->Branch("maud_posx", &maud_vals[2], "maud_posx/D");
+//    tree_final->Branch("maud_posy", &maud_vals[3], "maud_posy/D");
+//    tree_final->Branch("maud_posz", &maud_vals[4], "maud_posz/D");
+
+//    tree_final->Branch("cea_det_id", &cea_det_id, "cea_det_id/b");
+    tree_final->Branch("cea_time", &cea_time, "cea_time/D");
+    tree_final->Branch("cea_energy", &cea_energy, "cea_energy/D");
+    tree_final->Branch("cea_posx", &cea_posx, "cea_posx/D");
+    tree_final->Branch("cea_posy", &cea_posy, "cea_posy/D");
+    tree_final->Branch("cea_posz", &cea_posz, "cea_posz/D");
+
+//    tree_final->Branch("dssd_det_id", &dssd_det_id, "dssd_det_id/b");
+    tree_final->Branch("dssd_time", &dssd_time, "dssd_time/D");
+    tree_final->Branch("dssd_energy", &dssd_energy, "dssd_energy/D");
+    tree_final->Branch("dssd_posx", &dssd_posx, "dssd_posx/D");
+    tree_final->Branch("dssd_posy", &dssd_posy, "dssd_posy/D");
+    tree_final->Branch("dssd_posz", &dssd_posz, "dssd_posz/D");
+
+//    tree_final->Branch("ucda_det_id", &ucda_det_id, "ucda_det_id/b");
+    tree_final->Branch("ucda_time", &ucda_time, "ucda_time/D");
+    tree_final->Branch("ucda_energy", &ucda_energy, "ucda_energy/D");
+    tree_final->Branch("ucda_posx", &ucda_posx, "ucda_posx/D");
+    tree_final->Branch("ucda_posy", &ucda_posy, "ucda_posy/D");
+    tree_final->Branch("ucda_posz", &ucda_posz, "ucda_posz/D");
+
+//    tree_final->Branch("ucdb_det_id", &ucdb_det_id, "ucdb_det_id/b");
+    tree_final->Branch("ucdb_time", &ucdb_time, "ucdb_time/D");
+    tree_final->Branch("ucdb_energy", &ucdb_energy, "ucdb_energy/D");
+    tree_final->Branch("ucdb_posx", &ucdb_posx, "ucdb_posx/D");
+    tree_final->Branch("ucdb_posy", &ucdb_posy, "ucdb_posy/D");
+    tree_final->Branch("ucdb_posz", &ucdb_posz, "ucdb_posz/D");
+
+//    tree_final->Branch("ucdc_det_id", &ucdc_det_id, "ucdc_det_id/b");
+    tree_final->Branch("ucdc_time", &ucdc_time, "ucdc_time/D");
+    tree_final->Branch("ucdc_energy", &ucdc_energy, "ucdc_energy/D");
+    tree_final->Branch("ucdc_posx", &ucdc_posx, "ucdc_posx/D");
+    tree_final->Branch("ucdc_posy", &ucdc_posy, "ucdc_posy/D");
+    tree_final->Branch("ucdc_posz", &ucdc_posz, "ucdc_posz/D");
+
+//    tree_final->Branch("ucdd_det_id", &ucdd_det_id, "ucdd_det_id/b");
+    tree_final->Branch("ucdd_time", &ucdd_time, "ucdd_time/D");
+    tree_final->Branch("ucdd_energy", &ucdd_energy, "ucdd_energy/D");
+    tree_final->Branch("ucdd_posx", &ucdd_posx, "ucdd_posx/D");
+    tree_final->Branch("ucdd_posy", &ucdd_posy, "ucdd_posy/D");
+    tree_final->Branch("ucdd_posz", &ucdd_posz, "ucdd_posz/D");
+
+//    tree_final->Branch("maud_det_id", &maud_det_id, "maud_det_id/b");
+    tree_final->Branch("maud_time", &maud_time, "maud_time/D");
+    tree_final->Branch("maud_energy", &maud_energy, "maud_energy/D");
+    tree_final->Branch("maud_posx", &maud_posx, "maud_posx/D");
+    tree_final->Branch("maud_posy", &maud_posy, "maud_posy/D");
+    tree_final->Branch("maud_posz", &maud_posz, "maud_posz/D");
+
+//    std::array<std::reference_wrapper<std::array<Double_t, 5>>, 7> event_values = {
+//    cea_vals, dssd_vals, ucda_vals, ucdb_vals, ucdc_vals, ucdd_vals, maud_vals};
+
+    // Combining the UCD trees
+    std::vector<Double_t> timevec;
+    std::vector<uint64_t> det_id;
+    std::vector<uint64_t> det_tree_index;
+    timevec.reserve(detectorTrees[0].nentry + detectorTrees[1].nentry + detectorTrees[2].nentry + detectorTrees[3].nentry);
+
+    for (size_t ite_det = 0; ite_det<4; ++ite_det) {
+//        std::cout << "DET : " << ite_det << std::endl;
+        for (uint64_t i = 0; i<detectorTrees[ite_det].nentry; ++i) {
+            detectorTrees[ite_det].tree->GetEntry(i);
+            timevec.push_back(detectorTrees[ite_det].time);
+            det_id.push_back(detectorTrees[ite_det].det_id);
+            det_tree_index.push_back(i);
+//            if ( i == 0 || i == 1 || i == 2 || i == 3) {
+////                OK
+//                std::cout << "Show first ev in dets" << std::endl;
+//                std::cout << "time " << detectorTrees[ite_det].time << std::endl;
+//                std::cout << "energy " << detectorTrees[ite_det].energy << std::endl;
+//                std::cout << "x " << detectorTrees[ite_det].pos[0] << std::endl;
+//                std::cout << "y " << detectorTrees[ite_det].pos[1] << std::endl;
+//                std::cout << "z " << detectorTrees[ite_det].pos[2] << std::endl;
+//                std::cout << "det_id, " << detectorTrees[ite_det].det_id << std::endl;
+//                std::cout << "ite det, " << ite_det << std::endl;
+//                std::cout << "det_tree_index, " << i << std::endl;
+//            }
+        }
+    }
+
+    uint64_t nentries_temp = timevec.size();
+    std::vector<size_t> sorted_index = sort_index(timevec);
+
+    uint64_t i_loop = 0;
+    uint64_t j_loop = 0;
+    uint64_t idx_i;
+    uint64_t idx_j;
+    Double_t window = 2e-6;
+    std::vector<uint8_t> temp_dets;
+    std::vector<size_t> temp_tree_evnt_id;
+    std::unordered_set<size_t> seen;
+
+    std::map<uint8_t, size_t> det_id_to_tree_idx = {
+    {1, 0}, {2, 1}, {3, 2}, {4, 2}, {5, 2}, {6, 2}, {7, 3}};
+
+    uint64_t coincwarning = 0;
+
+    // Reading first entry of trees
+    // Necessary for a proper functioning, but no idea why
+    detectorTrees[0].tree->GetEntry(0);
+    detectorTrees[1].tree->GetEntry(0);
+    detectorTrees[2].tree->GetEntry(0);
+    detectorTrees[3].tree->GetEntry(0);
+
+//    i_loop = 2000000;
+//    j_loop = 2000000;
+//    nentries_temp = 3000000;
+    while (i_loop < nentries_temp) {
+//        std::cout << "\nNew loop" << std::endl;
+        temp_dets.clear();
+        temp_tree_evnt_id.clear();
+        seen.clear();
+        idx_i = sorted_index[i_loop];
+        idx_j = sorted_index[j_loop];
+//        std::cout << "i et j: " << i_loop << j_loop << std::endl;
+//        std::cout << "itri et jtri: " << idx_i << idx_j << std::endl;
+//        std::cout << "censés être les mêmes" << std::endl;
+        if (timevec[idx_j] < timevec[idx_i]) {
+            std::cerr << "WARNING, the time vector is supposed to be ordered but i+1 val < i val" <<std::endl;
+        }
+//        std::cout << "BEGIN : "<< std::endl;
+        while (j_loop < nentries_temp && timevec[idx_j] - timevec[idx_i] <= window) {
+//            std::cout << "  time values : " << timevec[idx_i] << "  " << timevec[idx_j] << std::endl;
+//            if (timevec[idx_j] - timevec[idx_i] == 0) {
+//                std::cout << " SAME  diff time values : " << timevec[idx_j] - timevec[idx_i] << std::endl;
+//            } else {
+//                std::cout << " NOT SAME  diff time values : " << timevec[idx_j] - timevec[idx_i] << std::endl;
+//            }
+            // Handling the case where the same detector triggered twice in the same time window.
+            // Probably to optimize, here we just suppress one of the informations maybe the wrong one is deleted
+            if (seen.insert(det_id[idx_j]).second) {
+//                std::cout << "adding unique det" << det_id[idx_j] << std::endl;
+//                std::cout << "adding unique idx" << idx_j << std::endl;
+                // Stores the id of the detector
+                temp_dets.push_back(det_id[idx_j]);
+                // Stores the index of the event in the detectors tree
+                temp_tree_evnt_id.push_back(det_tree_index[idx_j]);
+//                std::cout << " === i and j  : " << i_loop << " " << j_loop << std::endl;
+//                std::cout << " === idi and idj  : " << idx_i << " " << idx_j << std::endl;
+//                std::cout << " === times i and j  : " << timevec[idx_i] << " " << timevec[idx_j] << std::endl;
+//                std::cout << " === det i and j : " << det_id[idx_i]  << " " << det_id[idx_j]<< std::endl;
+//                std::cout << " === tree number i and j : " << det_id_to_tree_idx[det_id[idx_i]] << " " << det_id_to_tree_idx[det_id[idx_j]] << std::endl;
+//                std::cout << " === number of tree event i and j : " << det_tree_index[idx_i] << " " << det_tree_index[idx_j] << std::endl;
+                detectorTrees[det_id_to_tree_idx[det_id[idx_j]]].tree->GetEntry(det_tree_index[idx_j]);
+//                if (det_id[idx_j] == 3) {
+//                    std::cout << "ucda tree time : " << detectorTrees[det_id_to_tree_idx[det_id[idx_j]]].time << std::endl;
+//                } else if (det_id[idx_j] == 4) {
+//                    std::cout << "ucdb tree time : " << detectorTrees[det_id_to_tree_idx[det_id[idx_j]]].time << std::endl;
+//                } else if (det_id[idx_j] == 5) {
+//                    std::cout << "ucdc tree time : " << detectorTrees[det_id_to_tree_idx[det_id[idx_j]]].time << std::endl;
+//                } else if (det_id[idx_j] == 6) {
+//                    std::cout << "ucdd tree time : " << detectorTrees[det_id_to_tree_idx[det_id[idx_j]]].time << std::endl;
+//                }
+            } else {
+                coincwarning += 1;
+            }
+
+            j_loop++;
+            if (j_loop < nentries_temp) {
+                idx_j = sorted_index[j_loop];
+            }
+        }
+
+//        std::cout << "Looping aver coincident events done : i and j : " << i_loop << j_loop << std::endl;
+        i_loop = j_loop;
+        // Filling the root tree
+        event_len = temp_tree_evnt_id.size();
+
+//        std::cout << std::fixed << std::setprecision(10);
+        // cea vals
+        AttributeValues(cea_time, cea_energy, cea_posx, cea_posy, cea_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 1);
+        // dssd vals
+        AttributeValues(dssd_time, dssd_energy, dssd_posx, dssd_posy, dssd_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 2);
+        // ucda vals
+        AttributeValues(ucda_time, ucda_energy, ucda_posx, ucda_posy, ucda_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 3);
+        // ucdb vals
+        AttributeValues(ucdb_time, ucdb_energy, ucdb_posx, ucdb_posy, ucdb_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 4);
+        // ucdc vals
+        AttributeValues(ucdc_time, ucdc_energy, ucdc_posx, ucdc_posy, ucdc_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 5);
+        // ucdd vals
+        AttributeValues(ucdd_time, ucdd_energy, ucdd_posx, ucdd_posy, ucdd_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 6);
+        // maud vals
+        AttributeValues(maud_time, maud_energy, maud_posx, maud_posy, maud_posz, mask, temp_dets, temp_tree_evnt_id, det_id_to_tree_idx, detectorTrees, 7);
+//        std::cout << "len : " << temp_dets.size() << std::endl;
+//        std::cout << "times : " << cea_time << " " << dssd_time << " " << ucda_time << " " << ucdb_time << " " << ucdc_time << " " << ucdd_time << " " << maud_time << " " << std::endl;
+//        std::cout << "energies : " << cea_energy << " " << dssd_energy << " " << ucda_energy << " " << ucdb_energy << " " << ucdc_energy << " " << ucdd_energy << " " << maud_energy << " " << std::endl;
+//        std::cout << "\n" << std::endl;
+        tree_final->Fill();
+    }
+    file_final->Write();
+    file_final->Close();
+    file_cea->Close();
+    file_dssd->Close();
+    file_ucd->Close();
+    file_maud->Close();
+    if (coincwarning > 0) {
+        std::cout << "WARNING : There is " << coincwarning << "coincidences between events inside the same detector" << std::endl;
+    }
 }
 
 void FindCoincidences(const std::string &tree_name_a, const std::string &tree_name_b, std::vector<uint64_t> &idx_tree_a, std::vector<uint64_t> &idx_tree_b, std::vector<Double_t> &coinc_delays, const Double_t window_delay, const bool display, std::vector<TCanvas*> &save_canvas) {

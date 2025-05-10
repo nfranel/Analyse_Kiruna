@@ -28,30 +28,31 @@ int main()
 {
 //    const std::string &fname_dssd_to_merge = "Kiruna_data/563_20240623T010937Z_D1B_20240623_195133_0002.sum.root";
     const std::string &fname_dssd_to_merge = "Kiruna_data/dssd_data/*.root";
-    const std::string &fname_cea_to_merge = "Kiruna_data/cea_data/*.root";
 
 //    const std::string &fname_maud = "Kiruna_data/563_20240623T010937Z_D2B_20240623_195132_0002.sum.root";
-    const std::string &fname_maud = "Kiruna_data/maud_data/*.root";
+//    const std::string &fname_cea = "Kiruna_data/cea_data/*.root";
+    const std::string &fname_cea = "Kiruna_data/temp_d1a.root";
     const std::string &fname_dssd = "merged_dssd_file.root";
-    const std::string &fname_cea = "merged_cea_file.root";
+    const std::string &fname_maud = "Kiruna_data/maud_data/*.root";
 
-    const std::string fname_maud_corr = "corr_maud_file.root";
+    const std::string fname_cea_corr = "corr_cea_file.root";
     const std::string fname_dssd_corr = "corr_dssd_file.root";
     const std::string fname_ucda_corr = "corr_ucda_file.root";
     const std::string fname_ucdb_corr = "corr_ucdb_file.root";
     const std::string fname_ucdc_corr = "corr_ucdc_file.root";
     const std::string fname_ucdd_corr = "corr_ucdd_file.root";
-    const std::string fname_cea_corr = "corr_cea_file.root";
+    const std::string fname_maud_corr = "corr_maud_file.root";
 
-    const std::string fname_maud_corr_abs = "corr_abs_maud_file.root";
+    const std::string fname_cea_corr_abs = "corr_abs_cea_file.root";
     const std::string fname_dssd_corr_abs = "corr_abs_dssd_file.root";
     const std::string fname_ucda_corr_abs = "corr_abs_ucda_file.root";
     const std::string fname_ucdb_corr_abs = "corr_abs_ucdb_file.root";
     const std::string fname_ucdc_corr_abs = "corr_abs_ucdc_file.root";
     const std::string fname_ucdd_corr_abs = "corr_abs_ucdd_file.root";
-    const std::string fname_cea_corr_abs = "corr_abs_cea_file.root";
-
     const std::string fname_ucd_corr_abs = "corr_abs_ucd_file.root";
+    const std::string fname_maud_corr_abs = "corr_abs_maud_file.root";
+
+    const std::string fname_final_tree = "kiruna_tree.root";
 
 // ====================================================================================================
 // Combining P and N channels of DSSD
@@ -70,7 +71,7 @@ int main()
     std::cout << "=======================================================================================" << std::endl;
     uint32_t glitch_corr_count_maud = 0;
     uint32_t minor_corr_count_maud = 0;
-//    CorrectTimes(fname_maud, fname_maud_corr, "maud", glitch_corr_count_maud, minor_corr_count_maud);
+//    CorrectTimesIJCLAB(fname_maud, fname_maud_corr, "maud", glitch_corr_count_maud, minor_corr_count_maud);
     std::cout << " Correction done ! "<< std::endl;
 
 // ====================================================================================================
@@ -81,13 +82,31 @@ int main()
     std::cout << "=======================================================================================" << std::endl;
     uint32_t glitch_corr_count_dssd = 0;
     uint32_t minor_corr_count_dssd = 0;
-//    CorrectTimes(fname_dssd, fname_dssd_corr, "dssd", glitch_corr_count_dssd, minor_corr_count_dssd);
+//    CorrectTimesIJCLAB(fname_dssd, fname_dssd_corr, "dssd", glitch_corr_count_dssd, minor_corr_count_dssd);
     std::cout << " Correction done ! "<< std::endl;
 
 // ====================================================================================================
-// creating new timestamps with absolute time reference being pps_info = 1719079200 (22nd june 20:00:00)
+// Correcting CEA times
+// ====================================================================================================
+    std::cout << "\n=======================================================================================" << std::endl;
+    std::cout << " Opening and correcting CEA times "<< std::endl;
+    std::cout << "=======================================================================================" << std::endl;
+    uint32_t glitch_corr_count_cea = 0;
+    uint32_t minor_corr_count_cea = 0;
+//    CorrectTimesCEA(fname_cea, fname_cea_corr, glitch_corr_count_cea, minor_corr_count_cea);
+    std::cout << " Correction done ! "<< std::endl;
+
+
+// ====================================================================================================
+// creating new timestamps with absolute time reference being abs_gps_time_ref = 1719079200 (22nd june 20:00:00)
+// At 23:00:52 gps - abs_gps_time_ref take the value 97252 (37h and 52sec)
+//    After doing this with gps time we get :
+//    gps - abs_gps_time_ref first get the value 97252 for pps_corr = 78721
+//    then as pps_corr_abs = 97252 at this time (to match the gps) : pps_corr_abs = pps_corr - abs_pps_time_ref
+//     then abs_pps_time_ref = pps_corr - pps_corr_abs = 97252 - 78721 = 18531
 // ====================================================================================================
     uint32_t abs_gps_time_ref = 1719079200;
+    uint32_t abs_pps_time_ref = 18531;
     std::cout << "\n=======================================================================================" << std::endl;
     std::cout << " Absolute time origin is set the 23rd of june 20:00:00  :   " << abs_gps_time_ref << std::endl;
     std::cout << " Time correction to the GPS time is :   " << abs_gps_time_ref << std::endl;
@@ -104,8 +123,14 @@ int main()
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Aligning DSSD with time origin "<< std::endl;
-    ChangeTimeOriginIJCLAB(fname_dssd_corr, fname_dssd_corr_abs, "dssd", abs_gps_time_ref);
-    DisplayDSSDChannels(fname_dssd_corr_abs);
+//    ChangeTimeOriginIJCLAB(fname_dssd_corr, fname_dssd_corr_abs, "dssd", abs_gps_time_ref);
+//    DisplayDSSDChannels(fname_dssd_corr_abs);
+    std::cout << " Time origin set ! "<< std::endl;
+
+    std::cout << "=======================================================================================" << std::endl;
+    std::cout << "       Aligning CEA with time origin "<< std::endl;
+//    ChangeTimeOriginCEA(fname_cea_corr, fname_cea_corr_abs, abs_pps_time_ref);
+//    DisplayCEAChannels(fname_cea_corr_abs);
     std::cout << " Time origin set ! "<< std::endl;
 
     std::cout << "=======================================================================================" << std::endl;
@@ -132,6 +157,11 @@ int main()
     std::cout << "       Combining UCD A, B, C, D trees "<< std::endl;
 //    CombineUCDSubDets(fname_ucda_corr_abs, fname_ucdb_corr_abs, fname_ucdc_corr_abs, fname_ucdd_corr_abs, fname_ucd_corr_abs);
     std::cout << " UCD file combination done ! "<< std::endl;
+
+    std::cout << "=======================================================================================" << std::endl;
+    std::cout << "       Creating the full data tree "<< std::endl;
+    MakeWholeDataTree(fname_final_tree, fname_cea_corr_abs, fname_dssd_corr_abs, fname_ucd_corr_abs, fname_maud_corr_abs);
+    std::cout << " Whole data file created ! "<< std::endl;
 
     std::exit(EXIT_SUCCESS);
 

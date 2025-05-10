@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.cluster.hierarchy import single
 from scipy.fftpack import rfft, rfftfreq
 import uproot
 import pandas as pd
@@ -10,6 +11,7 @@ from datetime import datetime
 from scipy.optimize import curve_fit
 
 mpl.use('TkAgg')
+plt.rcParams.update({'font.size': 15})
 
 
 ############################################################################################################
@@ -21,7 +23,7 @@ class KirunaAnalysis:
     """
     Class containing Kiruna data and method to easily manipulate them
     """
-    def __init__(self, d1a_datafile=None, d2a_datafile=None, d1b_datafile=None, d2b_datafile=None):
+    def __init__(self, datafile="./kiruna_tree.root", detlist=None, opening_mode="compton"):
         """
 
         :param d2b_datafile:
@@ -30,53 +32,62 @@ class KirunaAnalysis:
         # Origin of the time referential : 2024/06/22 20:00:00
         self.timeref = datetime(2024, 6, 22, 20, 0, 0).timestamp()
 
-        # CEA data
-        self.d1a_energy_cutted = None
-        if d1a_datafile is None:
-            self.d1a_datafile = ""
+        # Data to load
+        if opening_mode == "compton":
+            det_keys = {"cea": ["cea_time", "cea_energy", "cea_posx", "cea_posy", "cea_posz"],
+                        "dssd": ["dssd_time", "dssd_energy", "dssd_posx", "dssd_posy", "dssd_posz"],
+                        "ucda": ["ucda_time", "ucda_energy", "ucda_posx", "ucda_posy", "ucda_posz"],
+                        "ucdb": ["ucdb_time", "ucdb_energy", "ucdb_posx", "ucdb_posy", "ucdb_posz"],
+                        "ucdc": ["ucdc_time", "ucdc_energy", "ucdc_posx", "ucdc_posy", "ucdc_posz"],
+                        "ucdd": ["ucdd_time", "ucdd_energy", "ucdd_posx", "ucdd_posy", "ucdd_posz"],
+                        "maud": ["maud_time", "maud_energy", "maud_posx", "maud_posy", "maud_posz"]}
+            len_filtering = [2]
+        elif opening_mode == "spectro":
+            det_keys = {"cea": ["cea_time", "cea_energy"],
+                        "dssd": ["dssd_time", "dssd_energy"],
+                        "ucda": ["ucda_time", "ucda_energy"],
+                        "ucdb": ["ucdb_time", "ucdb_energy"],
+                        "ucdc": ["ucdc_time", "ucdc_energy"],
+                        "ucdd": ["ucdd_time", "ucdd_energy"],
+                        "maud": ["maud_time", "maud_energy"]}
+            len_filtering = [1, 2]
+        elif opening_mode == "full":
+            det_keys = {"cea": ["cea_time", "cea_energy", "cea_posx", "cea_posy", "cea_posz"],
+                        "dssd": ["dssd_time", "dssd_energy", "dssd_posx", "dssd_posy", "dssd_posz"],
+                        "ucda": ["ucda_time", "ucda_energy", "ucda_posx", "ucda_posy", "ucda_posz"],
+                        "ucdb": ["ucdb_time", "ucdb_energy", "ucdb_posx", "ucdb_posy", "ucdb_posz"],
+                        "ucdc": ["ucdc_time", "ucdc_energy", "ucdc_posx", "ucdc_posy", "ucdc_posz"],
+                        "ucdd": ["ucdd_time", "ucdd_energy", "ucdd_posx", "ucdd_posy", "ucdd_posz"],
+                        "maud": ["maud_time", "maud_energy", "maud_posx", "maud_posy", "maud_posz"]}
+            len_filtering = [1, 2]
         else:
-            self.d1a_datafile = d1a_datafile
-        self.d1a_df = None
-        self.d1a_init_ts = None
-        self.d1a_final_ts = None
-        self.d1a_init_date = None
-        self.d1a_final_date = None
+            raise KeyError("Expected keys are compton, spectro or full")
 
-        # DSSD data
-        self.d1b_energy_cutted = None
-        if d1b_datafile is None:
-            self.d1b_datafile = "corr_abs_dssd_file.root"
-        else:
-            self.d1b_datafile = d1b_datafile
-        self.d1b_df = None
-        self.d1b_init_ts = None
-        self.d1b_final_ts = None
-        self.d1b_init_date = None
-        self.d1b_final_date = None
+        if detlist == None:
+            detlist = ["dssd", "ucda", "ucdb", "ucdc", "ucdd", "maud"]
 
-        # UCD data
-        self.d2a_energy_cutted = None
-        if d2a_datafile is None:
-            self.d2a_datafile = ["corr_abs_ucda_file.root", "corr_abs_ucdb_file.root", "corr_abs_ucdc_file.root", "corr_abs_ucdd_file.root"]
-        else:
-            self.d2a_datafile = d2a_datafile
-        self.d2a_df = None
-        self.d2a_init_ts = None
-        self.d2a_final_ts = None
-        self.d2a_init_date = None
-        self.d2a_final_date = None
+        self.len_filtering = len_filtering
+        self.data = None
+        self.saved_columns = ["event_len"]
+        self.time_keys = []
+        self.energy_keys = []
+        for det in detlist:
+            self.saved_columns += det_keys[det]
+            self.time_keys.append(det_keys[det][0])
+            self.energy_keys.append(det_keys[det][1])
 
-        # Maud data
-        self.d2b_energy_cutted = None
-        if d2b_datafile is None:
-            self.d2b_datafile = "corr_abs_maud_file.root"
-        else:
-            self.d2b_datafile = d2b_datafile
-        self.d2b_df = None
-        self.d2b_init_ts = None
-        self.d2b_final_ts = None
-        self.d2b_init_date = None
-        self.d2b_final_date = None
+        self.datafile = datafile
+        # Number of the first entry after the date 22 June 2024 at 9:00PM
+        self.init_event = 1171752
+        # self.init_event = 0
+        self.final_event = None
+
+        self.init_ts = None
+        self.final_ts = None
+        self.init_date = None
+        self.final_date = None
+
+        self.energy_cutted = (0, 1e8)
 
         # Mean flux of 0.3 ph/s but emission every 0.03 sec : mean num of ph emited per pulsation : 0.3*0.03 = 0.009
         self.crab_flux = 0.02
@@ -94,72 +105,68 @@ class KirunaAnalysis:
                          [248800.05419025, 248883.775494775], [249157.926650425, 249382.772406325], [251492.077928625, 251649.213788825],
                          [260324.563231225, 260327.554940825], [261335.77597295, 261336.297486475], [323258.856362225, 323304.646581125]]
 
-        self.make_d2a_df()
-        # self.make_d2b_df()
+        # Load the data
+        self.load_data()
+        # Set the time and energy items
+        self.set_ener_time()
 
-    def make_d2a_df(self):
+    def load_data(self, memory_used=False):
         """
-        Extract the d2b panda df from a rootfile
+        Extract the kiruna df from a rootfile
         :return:
         """
-        # saved_columns = ["pps_cpt_corr_abs", "time_corr_abs", "energy", "ts_init", "pps_cpt_init", "adc_channels"]
-        saved_columns = ["pps_cpt_corr_abs", "time_corr_abs", "energy", "pps_cpt_init"]
-        temp_df = []
-        for udcfile in self.d2a_datafile:
-            with uproot.open(udcfile) as file:
-                print("Memory 1 : ", memory_usage(), " MB")
-                tree = file["Events"]
-                print("Memory 2 : ", memory_usage(), " MB")
-
-                # convert the tree in dataframe
-                temp_df.append(pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size=1000000, library="pd")], ignore_index=True))
-            print("Memory 3 : ", memory_usage(), " MB")
-        subdets = ["ucda", "ucdb", "ucdc", "ucdd"]
-        print(len(temp_df))
-        for df_ite, df in enumerate(temp_df):
-            df["sub_det"] = subdets[df_ite]
-            print(f"subdet : {subdets[df_ite]} - len : {len(df)}")
-        # self.d2a_df = pd.concat(temp_df, ignore_index=True).sort_values(by=["time_corr_abs", "sub_det"], inplace=True)
-        self.d2a_df = pd.concat(temp_df, ignore_index=True)
-        print(self.d2a_df)
-        self.d2a_df.sort_values(by=["time_corr_abs", "sub_det"], inplace=True)
-        print(self.d2a_df)
-        self.d2a_df.reset_index(drop=True, inplace=True)
-        print(self.d2a_df)
-        print(len(self.d2a_df))
-        self.d2a_init_ts = self.d2a_df.pps_cpt_corr_abs.values[0]
-        self.d2a_final_ts = self.d2a_df.pps_cpt_corr_abs.values[-1]
-        self.d2a_init_date = datetime.fromtimestamp(self.d2a_init_ts + self.timeref)
-        self.d2a_final_date = datetime.fromtimestamp(self.d2a_final_ts + self.timeref)
-
-    def make_d2b_df(self):
-        """
-        Extract the d2b panda df from a rootfile
-        :return:
-        """
-        # saved_columns = ["pps_cpt_corr_abs", "time_corr_abs", "energy", "ts_init", "pps_cpt_init", "adc_channels"]
-        saved_columns = ["pps_cpt_corr_abs", "time_corr_abs", "energy", "ts_init", "pps_cpt_init", "energy_adc"]
-        with uproot.open(self.d2b_datafile) as file:
-            # file is there a TDirectory, you can display the content with :
+        with uproot.open(self.datafile) as file:
+            # here, file is a TDirectory, you can display the content with :
             # print(file.keys())
             # You can have even more detail on what the key is with :
             # print(file.classnames())
             # Accessing the tree
-            print("Memory 1 : ", memory_usage(), " MB")
+            if memory_used:
+                print("Memory 1 : ", memory_usage(), " MB")
             tree = file["Events"]
-            print("Memory 2 : ", memory_usage(), " MB")
-            # Maud tree keys :
-            # print(maud_tree.keys())
+            if memory_used:
+                print("Memory 2 : ", memory_usage(), " MB")
 
             # convert the tree in dataframe
-            self.d2b_df = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size=1000000, library="pd")], ignore_index=True)
-            # self.d2b_df = tree.arrays(library="pd", entry_start=1609950, entry_stop=1609955)
-            print("Memory 3 : ", memory_usage(), " MB")
+            # self.data = pd.concat(self.load_precision(tree, compressed=True), ignore_index=True)
+            self.data = pd.concat([chunk[np.isin(chunk.event_len, self.len_filtering)] for chunk in tree.iterate(self.saved_columns, step_size=100000, entry_start=self.init_event, entry_stop=self.final_event, library="pd")], ignore_index=True)
+            if memory_used:
+                print("df memory : ", self.data.memory_usage(deep=True))
+                print("Memory 3 : ", memory_usage(), " MB")
 
-            self.d2b_init_ts = self.d2b_df.pps_cpt_corr_abs.values[0]
-            self.d2b_final_ts = self.d2b_df.pps_cpt_corr_abs.values[-1]
-            self.d2b_init_date = datetime.fromtimestamp(self.d2b_init_ts + self.timeref)
-            self.d2b_final_date = datetime.fromtimestamp(self.d2b_final_ts + self.timeref)
+        self.init_time = 3600
+        self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[self.data.iloc[-1][self.time_keys].values != -999])
+        self.init_date = datetime.fromtimestamp(int(self.init_time) + self.timeref)
+        self.final_date = datetime.fromtimestamp(int(self.final_time) + self.timeref)
+        self.data.replace(-999, np.nan, inplace=True)
+
+    def load_precision(self, tree, compressed=True):
+        """
+        load chunks of data to be concatenated. Different methods are used according to compression of the data
+        :param tree:
+        :param compressed:
+        :return:
+        """
+        if compressed:
+            list_chunks = []
+            # Data are loaded using np arrays to prevent from affecting data into float64 and wasting memory
+            for arrays in tree.iterate(self.saved_columns, step_size=100000, entry_start=self.init_event, entry_stop=self.final_event, library="np"):
+                for col in arrays:
+                    if col != "event_len":
+                        arrays[col] = arrays[col].astype(np.float32)
+                temp_df = pd.DataFrame(arrays)
+                list_chunks.append(temp_df[np.isin(temp_df.event_len, self.len_filtering)])
+            return list_chunks
+        else:
+            return [chunk[np.isin(chunk.event_len, self.len_filtering)] for chunk in tree.iterate(self.saved_columns, step_size=100000, entry_start=self.init_event, entry_stop=self.final_event, library="pd")]
+
+    def set_ener_time(self):
+        """
+        Calculates a representative time for the event and sums the energy deposits for multiple interaction events
+        :return:
+        """
+        self.data["time"] = np.mean(self.data[self.time_keys], axis=1)
+        self.data["energy"] = np.sum(self.data[self.energy_keys], axis=1)
 
     def energy_cut(self, erg_cut):
         """
@@ -167,16 +174,183 @@ class KirunaAnalysis:
         :param erg_cut:
         :return:
         """
-        if self.energy_cutted is not None:
+        if self.energy_cutted != erg_cut:
             if erg_cut[0] < self.energy_cutted[0] or erg_cut[1] > self.energy_cutted[1]:
-                raise ValueError("Error during the energy cut : a cut has already been applied, the new cut is wider than the previous one so data is incomplete")
-            elif erg_cut[0] == self.energy_cutted[0] or erg_cut[1] == self.energy_cutted[1]:
-                print("This energy cut is already applied, values are kept as they were")
-                return
+                print("WARNING : a cut has already been applied, the new cut is wider than the previous one so data is incomplete")
+        else:
+            print("The energy cut is already applied, nothing is done")
+        self.energy_cutted = (max(erg_cut[0], self.energy_cutted[0]), min(erg_cut[1], self.energy_cutted[1]))
+        self.data = self.data[np.logical_and(self.data.energy > erg_cut[0], self.data.energy < erg_cut[1])]
+
+    def create_lightcurve(self, detector="all", init_date="begin", end_date="end", erg_cut=None, bins=1000):
+        """
+
+        :param init_date:
+        :param end_date:
+        :param erg_cut:
+        :return:
+        """
+        if erg_cut is not None:
+            self.energy_cut(erg_cut)
+
+        init_date = self.get_time_abs(init_date)
+        finish_date = self.get_time_abs(end_date)
+
+        if detector == "all":
+            sel_times = self.data[(self.data.time >= init_date) & (self.data.time <= finish_date)].time.values
+            ylab = "Total number of event"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "cea":
+            sel_times = self.data[(self.data.cea_time >= init_date) & (self.data.cea_time <= finish_date)].cea_time.values
+            ylab = "Number of event D1A"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "dssd":
+            sel_times = self.data[(self.data.dssd_time >= init_date) & (self.data.dssd_time <= finish_date)].dssd_time.values
+            ylab = "Number of event D1B"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "ucd":
+            sel_times = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date) |
+                                  (self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date) |
+                                  (self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date) |
+                                  (self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].time.values
+            ylab = "Number of event D2A"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "ucda":
+            sel_times = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date)].ucda_time.values
+            ylab = "Number of event D2AA"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "ucdb":
+            sel_times = self.data[(self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date)].ucdb_time.values
+            ylab = "Number of event D2AB"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "ucdc":
+            sel_times = self.data[(self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date)].ucdc_time.values
+            ylab = "Number of event D2AC"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "ucdd":
+            sel_times = self.data[(self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].ucdd_time.values
+            ylab = "Number of event D2AD"
+            print(sel_times)
+            print(len(sel_times))
+        elif detector == "maud":
+            sel_times = self.data[(self.data.maud_time >= init_date) & (self.data.maud_time <= finish_date)].maud_time.values
+            ylab = "Number of event D2B"
+            print(sel_times)
+            print(len(sel_times))
+        else:
+            raise ValueError("Wrong name for detector.")
+
+        if len(sel_times) > 0:
+            fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+            ax.hist(sel_times, bins=bins, histtype="step", label=f"In flight light curve\nergcut = {erg_cut}")
+            ax.set(xlabel="Corrected time from 2024/06/22 20:00:00 (s)", ylabel=ylab, xlim=(max(0, init_date - 5000) , finish_date + 5000))
+            ax.legend()
+            plt.show()
+
+    def create_spectrum(self, date_init, date_final, detector="all", erg_cut=None, nbins=None, xlog=False, ylog=False, fit511=True):
+        """
+
+        :param date_init:
+        :param date_final:
+        :param erg_cut:
+        :param xlog:
+        :param ylog:
+        :param fit511:
+        :return:
+        """
+        if erg_cut is not None:
+            self.energy_cut(erg_cut)
+        init_date = self.get_time_abs(date_init)
+        finish_date = self.get_time_abs(date_final)
+
+        if xlog:
+            xlog = "log"
+        else:
+            xlog = "linear"
+        if ylog:
+            ylog = "log"
+        else:
+            ylog = "linear"
+
+        if detector == "all":
+            sel_energies = self.data[(self.data.time >= init_date) & (self.data.time <= finish_date)].energy.values
+        elif detector == "cea":
+            sel_energies = self.data[(self.data.cea_time >= init_date) & (self.data.cea_time <= finish_date)].cea_energy.values
+            print(sel_energies)
+        elif detector == "dssd":
+            sel_energies = self.data[(self.data.dssd_time >= init_date) & (self.data.dssd_time <= finish_date)].dssd_energy.values
+            print(sel_energies)
+        elif detector == "ucd":
+            sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date) &
+                                     (self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date) &
+                                     (self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date) &
+                                     (self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].energy.values
+            print(sel_energies)
+        elif detector == "ucda":
+            sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date)].ucda_energy.values
+            print(sel_energies)
+        elif detector == "ucdb":
+            sel_energies = self.data[(self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date)].ucdb_energy.values
+            print(sel_energies)
+        elif detector == "ucdc":
+            sel_energies = self.data[(self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date)].ucdc_energy.values
+            print(sel_energies)
+        elif detector == "ucdd":
+            sel_energies = self.data[(self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].ucdd_energy.values
+            print(sel_energies)
+        elif detector == "maud":
+            sel_energies = self.data[(self.data.maud_time >= init_date) & (self.data.maud_time <= finish_date)].maud_energy.values
+            print(sel_energies)
+        else:
+            raise ValueError("Wrong name for detector.")
+
+        if len(sel_energies) > 0:
+            # ============================================================================================================================
+            # Ploting the spectrum
+            fig, ax = plt.subplots(1, 1, figsize=(16, 10))
+
+            if fit511:
+                if nbins is not None:
+                    bins = np.linspace(-100, 5500, nbins)
+                else:
+                    bins = np.linspace(-100, 5500, 1000)
+                yhist, xhist = np.histogram(sel_energies, bins=bins)
+
+                ener_select, popt, r2 = fitting511(xhist, yhist, 511, 430, 590)
+                print(f"============ Fit with {len(bins)} bins ============")
+                print("===  Fitting results")
+                if len(popt) == 0:
+                    print(f"   Mean = {0} keV       Energy resolution = {0} %  ==")
+                else:
+                    print(f"   Mean = {popt[1]} keV       Energy resolution = {popt[2] * 2.3548 / popt[1] * 100} %  ==")
+                    ax.scatter(ener_select, gauss_func(ener_select, *popt), color="red", s=2)
+                print(f"   R² = {r2}")
+                # print("===  Positions")
+                # print(f"   init = {valinit} keV")
+                # print(f"   511 = {val511} keV")
+                # print(f"   end = {valfinal} keV")
+                print()
+                ax.axvline(511)
+                ax.axvline(430)
+                ax.axvline(590)
+                # for val in change:
+                #     ax.axvline(val)
             else:
-                print("Warning : a cut has already been applied but the 2 cuts should not interfere, the data should be complete")
-        self.energy_cutted = erg_cut
-        self.d2b_df = self.d2b_df[np.logical_and(self.d2b_df.energy > erg_cut[0], self.d2b_df.energy < erg_cut[1])]
+                bins = np.linspace(-100, 5500, 1000)
+            ax.hist(sel_energies, bins=bins, histtype="step", label="In flight spectrum")
+            ax.axvline(511, label="511 keV", color="green")
+            ax.set(xlabel="Energy (keV)", ylabel="Number of event", xscale=xlog, yscale=ylog)
+            ax.legend()
+            plt.show()
+        else:
+            print("No data for the given period")
 
     def fft_analysis(self, erg_cut=None, mode="kiruna", add_signal=False, times_of_emptyness=False, periods=None, figtitle=""):
         """
@@ -200,7 +374,7 @@ class KirunaAnalysis:
                        ["25/06/2024 6:40:00", "25/06/2024 22:50:00"],
                        ["26/06/2024 8:00:00", "end"]]
         deg_lim = 15
-        kept_times = [[self.get_timestamp(datestring) for datestring in plist] for plist in periods]
+        kept_times = [[self.get_time_abs(datestring) for datestring in plist] for plist in periods]
 
         if mode == "kiruna":
             # Opening ROOT file
@@ -217,98 +391,6 @@ class KirunaAnalysis:
             self.run_fft(name, namefig=f"window_{len(periods)}_{deg_lim}°", vline=True)
         else:
             raise ValueError("Please use a correct mode for the fft analysis : kiruna, kiruna_select or simulated")
-
-    def create_spectrum(self, date_init, date_final, erg_cut=None, nbins=None, xlog=False, ylog=False, fit511=True):
-        """
-
-        :param date_init:
-        :param date_final:
-        :param erg_cut:
-        :param xlog:
-        :param ylog:
-        :param fit511:
-        :return:
-        """
-        if erg_cut is not None:
-            self.energy_cut(erg_cut)
-        init_date = self.get_timestamp(date_init)
-        finish_date = self.get_timestamp(date_final)
-
-        if xlog:
-            xlog = "log"
-        else:
-            xlog = "linear"
-        if ylog:
-            ylog = "log"
-        else:
-            ylog = "linear"
-
-        maud_df_select = self.d2b_df[np.logical_and(self.d2b_df.pps_cpt_corr_abs >= init_date, self.d2b_df.pps_cpt_corr_abs <= finish_date)]
-        if len(maud_df_select) > 0:
-            # ============================================================================================================================
-            # Ploting the spectrum
-            fig, ax = plt.subplots(1, 1, figsize=(16, 10))
-
-            if fit511:
-                if nbins is not None:
-                    bins = np.linspace(-100, 5500, nbins)
-                else:
-                    bins = np.linspace(-100, 5500, 1000)
-                yhist, xhist = np.histogram(maud_df_select.energy.values, bins=bins)
-
-                ener_select, popt, r2 = fitting511(xhist, yhist, 511, 430, 590)
-                print(f"============ Fit with {len(bins)} bins ============")
-                print("===  Fitting results")
-                if len(popt) == 0:
-                    print(f"   Mean = {0} keV       Energy resolution = {0} %  ==")
-                else:
-                    print(f"   Mean = {popt[1]} keV       Energy resolution = {popt[2] * 2.3548 / popt[1] * 100} %  ==")
-                    ax.scatter(ener_select, gauss_func(ener_select, *popt), color="red", s=2)
-                print(f"   R² = {r2}")
-                # print("===  Positions")
-                # print(f"   init = {valinit} keV")
-                # print(f"   511 = {val511} keV")
-                # print(f"   end = {valfinal} keV")
-                print()
-                ax.axvline(511)
-                ax.axvline(430)
-                ax.axvline(590)
-                # for val in change:
-                #     ax.axvline(val)
-            else:
-                bins = np.linspace(-100, 5500, 1000)
-            ax.hist(maud_df_select.energy.values, bins=bins, histtype="step", label="In flight spectrum")
-            ax.axvline(511, label="511 keV", color="green")
-            ax.set(xlabel="Energy (keV)", ylabel="Number of event", xscale=xlog, yscale=ylog)
-            ax.legend()
-            plt.show()
-        else:
-            print("No data for the given period")
-
-    def create_lightcurve(self, init_date="begin", end_date="end", erg_cut=None, bins=1000):
-        """
-
-        :param init_date:
-        :param end_date:
-        :param erg_cut:
-        :return:
-        """
-        if erg_cut is not None:
-            self.energy_cut(erg_cut)
-
-        init_date = self.get_timestamp(init_date)
-        finish_date = self.get_timestamp(end_date)
-
-        maud_df_select = self.d2b_df[np.logical_and(self.d2b_df.pps_cpt_corr_abs >= init_date, self.d2b_df.pps_cpt_corr_abs <= finish_date)]
-        if len(maud_df_select) > 0:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-            ax.hist(maud_df_select.time_corr_abs.values, bins=bins, histtype="step", label=f"In flight light curve\nergcut = {erg_cut}")
-            # ax.axvline(511, label="511 keV", color="green")
-            ax.set(xlabel="Corrected time from 2024/06/22 20:00:00 (s)", ylabel="Number of event")
-            # ax.scatter(ener2_select, gauss_func(ener2_select, *popt2), color="orange", s=2)
-
-            ax.legend()
-            plt.show()
 
     def fit_511(self, graphs=True):
         """
@@ -630,16 +712,16 @@ class KirunaAnalysis:
             plt.savefig(namefig)
         plt.show()
 
-    def get_timestamp(self, date):
+    def get_time_abs(self, date):
         """
 
         :param date:
         :return:
         """
         if date == "begin":
-            return self.d2b_df.pps_cpt_corr_abs.values[0]
+            return self.data.time.values[0]
         elif date == "end":
-            return self.d2b_df.pps_cpt_corr_abs.values[-1]
+            return self.data.time.values[-1]
         else:
             dateval, timeval = date.split(" ")
             day, month, year = map(int, dateval.split("/"))
@@ -958,130 +1040,6 @@ def fit_quad_calib(init_ts, final_ts, save_ratio=None, save_date=None, save_r2=N
                 f.write(f"{range(init_ts, final_ts)[ite]} {interpol_ratio[ite]}\n")
             f.write(f"{final_ts} {interpol_ratio[-1]}")
 
-# fit_quad_calib()
-
-analysis = KirunaAnalysis()
-ergcut = None
-# ergcut = (20, 1000)
-# ergcut = (20, 200)
-# periods = [["23/06/2024 4:20:00", "23/06/2024 18:10:00"],
-#            ["24/06/2024 5:00:00", "24/06/2024 21:00:00"],
-#            ["25/06/2024 6:40:00", "25/06/2024 22:50:00"],
-#            ["26/06/2024 8:00:00", "end"]]
-# periods = [["22/06/2024 23:20:00", "23/06/2024 00:20:00"]]
-# init_date, end_date = "23/06/2024 11:50:00", "23/06/2024 15:26:40"
-# init_date, end_date = "23/06/2024 11:50:00", "23/06/2024 11:55:00"
-# analysis.create_spectrum(init_date, end_date)
-# init_date, end_date = "23/06/2024 11:55:00", "23/06/2024 12:00:00"
-# analysis.create_spectrum(init_date, end_date)
-# init_date, end_date = "24/06/2024 00:00:00", "24/06/2024 00:05:00"
-# analysis.create_spectrum(init_date, end_date)
-# init_date, end_date = "24/06/2024 00:05:00", "24/06/2024 00:10:00"
-# analysis.create_spectrum(init_date, end_date)
-
-# analysis.fft_analysis(erg_cut=ergcut, mode="kiruna", add_signal=False, times_of_emptyness=False, periods=periods, figtitle="Day1")
-# analysis.create_spectrum("begin", "end")
-# analysis.create_spectrum("26/06/2024 8:00:00", "end")
-# analysis.create_lightcurve(init_date="begin", end_date="end", erg_cut=ergcut)
-# analysis.create_lightcurve(init_date="23/06/2024 11:50:00", end_date="23/06/2024 15:26:40", erg_cut=ergcut)
-
-
-# save_ratio, save_date, save_r2, save_error, save_nev, save_reso = analysis.fit_511()
-#
-# with open("Kiruna_data/calib_maud/fine_calib.txt", "r") as f:
-#     x_correc, y_correc = np.array([line.split(" ") for line in f.read().split("\n")[1:]], dtype=float).transpose()
-#
-# fit_time = (np.array([int(date.split(" ")[-1]) for date in save_date]) + np.array([int(date.split(" ")[0]) for date in save_date])) / 2
-#
-# nbins = 1000
-# plt.rcParams.update({'font.size': 15})
-# figglobal, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, constrained_layout=True)
-#
-# ax1.hist(analysis.d2b_df.time_corr_abs.values, bins=nbins, histtype="step", label=f"In flight light curve\nergcut = {None}")
-# ax1.set(ylabel="Number of event")
-#
-# ax2.plot(x_correc, y_correc)
-# ax2.set(ylabel="Calibration correction")
-#
-# ax3.plot(fit_time, save_reso)
-# ax3.set(xlabel="Corrected time from 2024/06/22 20:00:00 (s)", ylabel="Fit resolution (%)")
-#
-# ax4.hist(save_reso, bins=30)
-# ax4.set(xlabel="Fit resolution (%)", ylabel="Count")
-#
-# plt.show()
-#
-# print("val moy : ", np.mean(save_reso))
-
-
-# fit_quad_calib(analysis.d2b_init_ts, analysis.d2b_final_ts, save_ratio, save_date, save_r2, save_error, save_nev)
-
-# timesbkg = ["24/06/2024 15:50:00", "24/06/2024 19:26:40"]
-# timesburst = ["23/06/2024 11:50:00", "23/06/2024 15:26:40"]
-# init1, end1 = analysis.get_timestamp(timesbkg[0]), analysis.get_timestamp(timesbkg[1])
-# init2, end2 = analysis.get_timestamp(timesburst[0]), analysis.get_timestamp(timesburst[1])
-#
-# maud_df_selectbkg = analysis.d2b_df[np.logical_and(analysis.d2b_df.pps_cpt_corr_abs >= init1, analysis.d2b_df.pps_cpt_corr_abs <= end1)]
-# maud_df_selectburst = analysis.d2b_df[np.logical_and(analysis.d2b_df.pps_cpt_corr_abs >= init2, analysis.d2b_df.pps_cpt_corr_abs <= end2)]
-#
-# bins = np.linspace(-100, 5500, 1000)
-#
-# fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
-# count1, ener1 = ax1.hist(maud_df_selectbkg.energy.values, bins=bins, histtype="step", label="In flight spectrum bkg")[:2]
-# count2, ener2 = ax1.hist(maud_df_selectburst.energy.values, bins=bins, histtype="step", label="In flight spectrum burst")[:2]
-# ax1.axvline(511, label="511 keV", color="green")
-# ax2.axvline(511, label="511 keV", color="green")
-# ax2.plot((ener1[1:]+ener1[:-1])/2, count2 - count1, label="Burst - background")
-# ax1.set(xlabel="Energy (keV)", ylabel="Number of event", yscale="log", ylim=(1, 300000))
-# ax2.set(xlabel="Energy (keV)", ylabel="Number of event", yscale="log", xscale="log", ylim=(1, 300000))
-#
-# ax1.legend()
-# ax2.legend()
-# plt.show()
-
-
-# # =================== Building the temperature file
-# from datetime import datetime, timezone
-#
-# files = ["./Kiruna_data/Balloon_flight_complementary_data/CAEN_Temperature-data-2024-09-03 16_53_32.csv",
-#          "./Kiruna_data/Balloon_flight_complementary_data/DSSD_Temperature-data-2024-09-03 16_53_15.csv",
-#          "./Kiruna_data/Balloon_flight_complementary_data/MS5611_Temperature-data-2024-09-03 16_52_10.csv",
-#          "./Kiruna_data/Balloon_flight_complementary_data/PI_Temperature-data-2024-09-03 16_52_49.csv"]
-# savedfiles = ["./Kiruna_data/calib_maud/maud_time_vs_temp_flight.txt", "./Kiruna_data/calib_dssd/dssd_time_vs_temp_flight.txt",
-#               "./Kiruna_data/Balloon_flight_complementary_data/MS5611_time_vs_temp_flight.txt",
-#               "./Kiruna_data/Balloon_flight_complementary_data/PI_time_vs_temp_flight.txt"]
-# for itefile in range(len(files)):
-#     times = []
-#     timestamps = []
-#     timestamps_abs = []
-#     temperatures = []
-#     with open(files[itefile], "r") as f:
-#         lines = f.read().split("\n")[2:]
-#     for line in lines:
-#         timeref = int(datetime(2024, 6, 22, 20, 0, 0).timestamp())
-#         vals = line.split(",")
-#         date, timeval = vals[0].split(" ")
-#         year, month, day = map(int, date.split("-"))
-#         hour, min, sec = map(int, timeval.split(":"))
-#         ts = int(datetime(year, month, day, hour, min, sec).timestamp())
-#         times.append(vals[0])
-#         timestamps.append(ts)
-#         timestamps_abs.append(ts - timeref)
-#         temperatures.append(float(vals[1].split(" ")[0]))
-#
-#     with open(savedfiles[itefile], "w") as fs:
-#         fs.write("LocalTime\tTimestamp\tTimestampNewRef\tTemperature\n")
-#         for ite in range(len(times)):
-#             fs.write(f"{times[ite]}\t{timestamps[ite]}\t{timestamps_abs[ite]}\t{temperatures[ite]}\n")
-
-import numpy as np
-import matplotlib.pyplot as plt
-import uproot
-import pandas as pd
-
-import matplotlib as mpl
-
-mpl.use("Qt5Agg")
 
 def show_calib_params(calibfile):
     with open(calibfile) as f:
@@ -1109,19 +1067,6 @@ def show_calib_params(calibfile):
         ax2.legend()
         ax2.grid(True)
 
-calib = "./Kiruna_data/calib_dssd/nside_v2.calib"
-show_calib_params(calib)
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-import uproot
-import pandas as pd
-from scipy.optimize import curve_fit
-
-import matplotlib as mpl
-
-mpl.use("Qt5Agg")
 
 def show_dssd_temp_dependance(file_bulk="./Kiruna_data/calib_dssd/fit_bulk.txt", file_peak="./Kiruna_data/calib_dssd/fit_pedest.txt"):
     with open(file_peak) as f:
@@ -1290,5 +1235,3 @@ def show_dssd_temp_dependance(file_bulk="./Kiruna_data/calib_dssd/fit_bulk.txt",
     #     f.write(f"{round(bulk_mean[-1, 5], 6)}")
     #     f.write("}\n};")
 
-show_dssd_temp_dependance()
-show_dssd_temp_dependance(file_bulk="./Kiruna_data/calib_dssd/fit_corr_bulk.txt", file_peak="./Kiruna_data/calib_dssd/fit_corr_pedest.txt")
