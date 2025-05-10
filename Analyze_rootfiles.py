@@ -134,12 +134,16 @@ class KirunaAnalysis:
                 print("df memory : ", self.data.memory_usage(deep=True))
                 print("Memory 3 : ", memory_usage(), " MB")
 
+        self.data.replace(-999, np.nan, inplace=True)
+        # Getting rid of unwanted values
+        print("len before geeting rid of not wanted lines : ", len(self.data))
+        self.data = self.data[~self.data[self.time_keys].isna().all(axis=1)]
+        print("len AFTER geeting rid of not wanted lines : ", len(self.data))
         self.init_time = 3600
         print(self.data.iloc[-1][self.time_keys])
-        self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[self.data.iloc[-1][self.time_keys].values != -999])
+        self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[~np.isnan(self.data.iloc[-1][self.time_keys].values)])
         self.init_date = datetime.fromtimestamp(int(self.init_time) + self.timeref)
         self.final_date = datetime.fromtimestamp(int(self.final_time) + self.timeref)
-        self.data.replace(-999, np.nan, inplace=True)
 
     def load_precision(self, tree, compressed=True):
         """
