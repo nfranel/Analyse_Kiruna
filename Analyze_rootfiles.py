@@ -711,6 +711,8 @@ class KirunaAnalysis:
                 return self.data.time.values[0]
             elif date == "end":
                 return self.data.time.values[-1]
+            else:
+                raise ValueError("Wrong string for date")
         else:
             dateval, timeval = date.split(" ")
             day, month, year = map(int, dateval.split("/"))
