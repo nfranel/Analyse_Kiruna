@@ -300,7 +300,7 @@ class KirunaAnalysis:
         if len(sel_energies) > 0:
             # ============================================================================================================================
             # Ploting the spectrum
-            fig, ax = plt.subplots(1, 1, figsize=(16, 10))
+            fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 
             if fit511:
                 if nbins is not None:
