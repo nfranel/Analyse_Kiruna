@@ -6,9 +6,29 @@ opening_mode = "compton"
 # opening_mode = "spectro"
 analysis = KirunaAnalysis(opening_mode=opening_mode)
 
-
-
+# LC and spectra for all, ionisation maximum, burst and background
 ergcut = None
+detector = "all"
+begins = ["begin", "begin", 56500, 130000]
+ends = ["end", 15000, 74000, 320000]
+xlog, ylog = True, True
+for i in range(len(begins)):
+    analysis.create_lightcurve(detector=detector, init_date=begins[i], end_date=ends[i], erg_cut=ergcut, bins=1000)
+    analysis.create_spectrum(begins[i], ends[i], detector=detector, erg_cut=ergcut, xlog=xlog, ylog=ylog)
+
+# Resolutions
+# ~ 8% all
+# ~ 9% ucd
+# ~ 7% maud
+#
+# Selection en temps :
+# total begin - end
+# ionisation maximum begin - 15000
+# burst 56500 - 74000
+# bkg 130000 - 320000
+
+
+# ergcut = None
 # ergcut = (20, 1000)
 # ergcut = (20, 200)
 # periods = [["23/06/2024 4:20:00", "23/06/2024 18:10:00"],

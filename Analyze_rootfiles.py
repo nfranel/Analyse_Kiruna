@@ -239,11 +239,11 @@ class KirunaAnalysis:
             ax.legend()
             plt.show()
 
-    def create_spectrum(self, date_init, date_final, detector="all", erg_cut=None, nbins=None, xlog=False, ylog=False, fit511=True):
+    def create_spectrum(self, init_date, end_date, detector="all", erg_cut=None, nbins=None, xlog=False, ylog=False, fit511=True):
         """
 
-        :param date_init:
-        :param date_final:
+        :param init_date:
+        :param end_date:
         :param erg_cut:
         :param xlog:
         :param ylog:
@@ -252,8 +252,8 @@ class KirunaAnalysis:
         """
         if erg_cut is not None:
             self.energy_cut(erg_cut)
-        init_date = self.get_time_abs(date_init)
-        finish_date = self.get_time_abs(date_final)
+        init_date = self.get_time_abs(init_date)
+        finish_date = self.get_time_abs(end_date)
 
         if xlog:
             xlog = "log"
@@ -304,9 +304,15 @@ class KirunaAnalysis:
 
             if fit511:
                 if nbins is not None:
-                    bins = np.linspace(-100, 5500, nbins)
+                    if xlog:
+                        bins = np.logspace(0, np.log10(5500), nbins)
+                    else:
+                        bins = np.linspace(0, 5500, nbins)
                 else:
-                    bins = np.linspace(-100, 5500, 1000)
+                    if xlog:
+                        bins = np.logspace(0, np.log10(5500), 1000)
+                    else:
+                        bins = np.linspace(0, 5500, 1000)
                 yhist, xhist = np.histogram(sel_energies, bins=bins)
 
                 ener_select, popt, r2 = fitting511(xhist, yhist, 511, 430, 590)
@@ -329,7 +335,10 @@ class KirunaAnalysis:
                 # for val in change:
                 #     ax.axvline(val)
             else:
-                bins = np.linspace(-100, 5500, 1000)
+                if xlog:
+                    bins = np.logspace(0, np.log10(5500), 1000)
+                else:
+                    bins = np.linspace(0, 5500, 1000)
             ax.hist(sel_energies, bins=bins, histtype="step", label="In flight spectrum")
             ax.axvline(511, label="511 keV", color="green")
             ax.set(xlabel="Energy (keV)", ylabel=ylab, xscale=xlog, yscale=ylog)
