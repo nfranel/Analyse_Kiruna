@@ -704,10 +704,13 @@ class KirunaAnalysis:
         :param date:
         :return:
         """
-        if date == "begin":
-            return self.data.time.values[0]
-        elif date == "end":
-            return self.data.time.values[-1]
+        if type(date) in [int, np.int32, np.int64]:
+            return date
+        elif type(date) == str:
+            if date == "begin":
+                return self.data.time.values[0]
+            elif date == "end":
+                return self.data.time.values[-1]
         else:
             dateval, timeval = date.split(" ")
             day, month, year = map(int, dateval.split("/"))

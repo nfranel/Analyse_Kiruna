@@ -5,6 +5,9 @@ from Analyze_rootfiles import KirunaAnalysis
 opening_mode = "compton"
 # opening_mode = "spectro"
 analysis = KirunaAnalysis(opening_mode=opening_mode)
+
+
+
 ergcut = None
 # ergcut = (20, 1000)
 # ergcut = (20, 200)
