@@ -1,7 +1,9 @@
 from Analyze_rootfiles import KirunaAnalysis
 
-# opening_mode = "compton"
-opening_mode = "spectro"
+# conda install -c conda-forge numpy matplotlib scipy pandas uproot memory_profiler pyqt
+
+opening_mode = "compton"
+# opening_mode = "spectro"
 analysis = KirunaAnalysis(opening_mode=opening_mode)
 ergcut = None
 # ergcut = (20, 1000)
