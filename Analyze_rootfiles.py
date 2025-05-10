@@ -266,33 +266,34 @@ class KirunaAnalysis:
 
         if detector == "all":
             sel_energies = self.data[(self.data.time >= init_date) & (self.data.time <= finish_date)].energy.values
+            ylab = "Total number of event"
         elif detector == "cea":
             sel_energies = self.data[(self.data.cea_time >= init_date) & (self.data.cea_time <= finish_date)].cea_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D1A"
         elif detector == "dssd":
             sel_energies = self.data[(self.data.dssd_time >= init_date) & (self.data.dssd_time <= finish_date)].dssd_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D1B"
         elif detector == "ucd":
             sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date) |
                                      (self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date) |
                                      (self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date) |
                                      (self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D2A"
         elif detector == "ucda":
             sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date)].ucda_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D2AA"
         elif detector == "ucdb":
             sel_energies = self.data[(self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date)].ucdb_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D2AB"
         elif detector == "ucdc":
             sel_energies = self.data[(self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date)].ucdc_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D2AC"
         elif detector == "ucdd":
             sel_energies = self.data[(self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].ucdd_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D2AD"
         elif detector == "maud":
             sel_energies = self.data[(self.data.maud_time >= init_date) & (self.data.maud_time <= finish_date)].maud_energy.values
-            print(len(sel_energies))
+            ylab = "Number of event D2B"
         else:
             raise ValueError("Wrong name for detector.")
 
@@ -331,7 +332,7 @@ class KirunaAnalysis:
                 bins = np.linspace(-100, 5500, 1000)
             ax.hist(sel_energies, bins=bins, histtype="step", label="In flight spectrum")
             ax.axvline(511, label="511 keV", color="green")
-            ax.set(xlabel="Energy (keV)", ylabel="Number of event", xscale=xlog, yscale=ylog)
+            ax.set(xlabel="Energy (keV)", ylabel=ylab, xscale=xlog, yscale=ylog)
             ax.legend()
             plt.show()
         else:
