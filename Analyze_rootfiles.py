@@ -135,7 +135,7 @@ class KirunaAnalysis:
                 print("Memory 3 : ", memory_usage(), " MB")
 
         self.init_time = 3600
-        print(self.data.iloc[-1][self.time_keys].values[self.data.iloc[-1][self.time_keys].values != -999])
+        print(self.data.iloc[-1][self.time_keys])
         self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[self.data.iloc[-1][self.time_keys].values != -999])
         self.init_date = datetime.fromtimestamp(int(self.init_time) + self.timeref)
         self.final_date = datetime.fromtimestamp(int(self.final_time) + self.timeref)
