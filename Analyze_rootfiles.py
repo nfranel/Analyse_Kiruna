@@ -136,11 +136,9 @@ class KirunaAnalysis:
 
         self.data.replace(-999, np.nan, inplace=True)
         # Getting rid of unwanted values
-        print("len before geeting rid of not wanted lines : ", len(self.data))
         self.data = self.data[~self.data[self.time_keys].isna().all(axis=1)]
-        print("len AFTER geeting rid of not wanted lines : ", len(self.data))
+
         self.init_time = 3600
-        print(self.data.iloc[-1][self.time_keys])
         self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[~np.isnan(self.data.iloc[-1][self.time_keys].values)])
         self.init_date = datetime.fromtimestamp(int(self.init_time) + self.timeref)
         self.final_date = datetime.fromtimestamp(int(self.final_time) + self.timeref)
@@ -204,51 +202,33 @@ class KirunaAnalysis:
         if detector == "all":
             sel_times = self.data[(self.data.time >= init_date) & (self.data.time <= finish_date)].time.values
             ylab = "Total number of event"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "cea":
             sel_times = self.data[(self.data.cea_time >= init_date) & (self.data.cea_time <= finish_date)].cea_time.values
             ylab = "Number of event D1A"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "dssd":
             sel_times = self.data[(self.data.dssd_time >= init_date) & (self.data.dssd_time <= finish_date)].dssd_time.values
             ylab = "Number of event D1B"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "ucd":
             sel_times = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date) |
                                   (self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date) |
                                   (self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date) |
                                   (self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].time.values
             ylab = "Number of event D2A"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "ucda":
             sel_times = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date)].ucda_time.values
             ylab = "Number of event D2AA"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "ucdb":
             sel_times = self.data[(self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date)].ucdb_time.values
             ylab = "Number of event D2AB"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "ucdc":
             sel_times = self.data[(self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date)].ucdc_time.values
             ylab = "Number of event D2AC"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "ucdd":
             sel_times = self.data[(self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].ucdd_time.values
             ylab = "Number of event D2AD"
-            print(sel_times)
-            print(len(sel_times))
         elif detector == "maud":
             sel_times = self.data[(self.data.maud_time >= init_date) & (self.data.maud_time <= finish_date)].maud_time.values
             ylab = "Number of event D2B"
-            print(sel_times)
-            print(len(sel_times))
         else:
             raise ValueError("Wrong name for detector.")
 
@@ -288,31 +268,31 @@ class KirunaAnalysis:
             sel_energies = self.data[(self.data.time >= init_date) & (self.data.time <= finish_date)].energy.values
         elif detector == "cea":
             sel_energies = self.data[(self.data.cea_time >= init_date) & (self.data.cea_time <= finish_date)].cea_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "dssd":
             sel_energies = self.data[(self.data.dssd_time >= init_date) & (self.data.dssd_time <= finish_date)].dssd_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "ucd":
-            sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date) &
-                                     (self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date) &
-                                     (self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date) &
+            sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date) |
+                                     (self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date) |
+                                     (self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date) |
                                      (self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "ucda":
             sel_energies = self.data[(self.data.ucda_time >= init_date) & (self.data.ucda_time <= finish_date)].ucda_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "ucdb":
             sel_energies = self.data[(self.data.ucdb_time >= init_date) & (self.data.ucdb_time <= finish_date)].ucdb_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "ucdc":
             sel_energies = self.data[(self.data.ucdc_time >= init_date) & (self.data.ucdc_time <= finish_date)].ucdc_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "ucdd":
             sel_energies = self.data[(self.data.ucdd_time >= init_date) & (self.data.ucdd_time <= finish_date)].ucdd_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         elif detector == "maud":
             sel_energies = self.data[(self.data.maud_time >= init_date) & (self.data.maud_time <= finish_date)].maud_energy.values
-            print(sel_energies)
+            print(len(sel_energies))
         else:
             raise ValueError("Wrong name for detector.")
 
