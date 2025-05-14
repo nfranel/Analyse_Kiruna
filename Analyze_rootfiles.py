@@ -237,7 +237,7 @@ class KirunaAnalysis:
             ax.hist(sel_times, bins=bins, histtype="step", label=f"In flight light curve\nergcut = {erg_cut}")
             ax.set(xlabel="Corrected time from 2024/06/22 20:00:00 (s)", ylabel=ylab, xlim=(max(0, init_date - 5000) , finish_date + 5000))
             ax.legend()
-            plt.show()
+            # plt.show()
 
     def create_spectrum(self, init_date, end_date, detector="all", erg_cut=None, nbins=None, xlog=False, ylog=False, fit511=True):
         """
@@ -343,7 +343,7 @@ class KirunaAnalysis:
             ax.axvline(511, label="511 keV", color="green")
             ax.set(xlabel="Energy (keV)", ylabel=ylab, xscale=xlog, yscale=ylog)
             ax.legend()
-            plt.show()
+            # plt.show()
         else:
             print("No data for the given period")
 

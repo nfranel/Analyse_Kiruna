@@ -1,4 +1,5 @@
 from Analyze_rootfiles import KirunaAnalysis
+import matplotlib.pyplot as plt
 
 # conda install -c conda-forge numpy matplotlib scipy pandas uproot memory_profiler pyqt
 
@@ -11,10 +12,12 @@ ergcut = None
 detector = "all"
 begins = ["begin", "begin", 56500, 130000]
 ends = ["end", 15000, 74000, 320000]
-xlog, ylog = True, True
+xlog, ylog = False, True
 for i in range(len(begins)):
     analysis.create_lightcurve(detector=detector, init_date=begins[i], end_date=ends[i], erg_cut=ergcut, bins=1000)
     analysis.create_spectrum(begins[i], ends[i], detector=detector, erg_cut=ergcut, xlog=xlog, ylog=ylog)
+plt.show()
+
 
 # Resolutions
 # ~ 8% all
