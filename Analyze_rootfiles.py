@@ -304,13 +304,13 @@ class KirunaAnalysis:
 
             if fit511:
                 if nbins is not None:
-                    if xlog:
-                        bins = np.logspace(0, np.log10(5500), nbins)
+                    if xlog == "log":
+                        bins = np.logspace(1, np.log10(5500), nbins)
                     else:
                         bins = np.linspace(0, 5500, nbins)
                 else:
-                    if xlog:
-                        bins = np.logspace(0, np.log10(5500), 1000)
+                    if xlog == "log":
+                        bins = np.logspace(1,  np.log10(5500), 1000)
                     else:
                         bins = np.linspace(0, 5500, 1000)
                 yhist, xhist = np.histogram(sel_energies, bins=bins)
@@ -335,8 +335,8 @@ class KirunaAnalysis:
                 # for val in change:
                 #     ax.axvline(val)
             else:
-                if xlog:
-                    bins = np.logspace(0, np.log10(5500), 1000)
+                if xlog == "log":
+                    bins = np.logspace(1, np.log10(5500), 1000)
                 else:
                     bins = np.linspace(0, 5500, 1000)
             ax.hist(sel_energies, bins=bins, histtype="step", label="In flight spectrum")
