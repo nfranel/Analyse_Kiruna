@@ -1,23 +1,29 @@
 # Variables
 CXX = g++
-#CXXFLAGS = `root-config --cflags` -Wall -O2
 CXXFLAGS = -g3 -O0 -Wall -Wextra -DDEBUG
 LDFLAGS = `root-config --libs`
 SRC_DIR = src
 BUILD_DIR = build
 INCLUDE_DIR = include
-TARGET = FulldatCoinCheck
 
-# Fichiers source et objets
-SRCS = $(wildcard $(SRC_DIR)/*.cpp)
-OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+TARGET1 = FulldatCoinCheck
+TARGET2 = thesis_analysis
+
+SRCS1 = $(SRC_DIR)/FulldatCoinCheck.cpp $(SRC_DIR)/CorrectionTimes.cpp
+SRCS2 = $(SRC_DIR)/thesis_analysis.cpp $(SRC_DIR)/CorrectionTimes.cpp
+
+OBJS1 = $(SRCS1:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+OBJS2 = $(SRCS2:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 
 # Règle principale
-all: $(TARGET)
+all: $(TARGET1) $(TARGET2)
 
-# Compilation du programme principal
-$(TARGET): $(OBJS)
-	$(CXX) -o $(TARGET) $(OBJS) $(LDFLAGS)
+# Compilation des exécutables
+$(TARGET1): $(OBJS1)
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+$(TARGET2): $(OBJS2)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 # Compilation des fichiers objets
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
@@ -26,4 +32,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 # Nettoyage
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET)
+	rm -rf $(BUILD_DIR) $(TARGET1) $(TARGET2)

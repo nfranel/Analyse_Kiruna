@@ -937,8 +937,270 @@ def fit_validation(lr2, lerror, r2lim, errorlim):
     return False
 
 
+def full_fit_maud_511(filename="corr_abs_maud_filevtemp.root", xlog="linear", ylog="linear"):
+    """
+    Extract the kiruna df from a rootfile
+    :return:
+    """
+    with uproot.open(filename) as file:
+        # here, file is a TDirectory, you can display the content with :
+        # print(file.keys())
+        # You can have even more detail on what the key is with :
+        # print(file.classnames())
+        # Accessing the tree
+        tree = file["Events"]
+        saved_columns = ["time_corr_abs", "energy"]
+
+        # convert the tree in dataframe
+        data = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size=100000, library="pd")], ignore_index=True)
+
+    ylab = "Number of event in D2B"
+
+    sel_energies = data.energy.values
+    print(sel_energies)
+    lowx = 380
+    highx = 600
+    # ============================================================================================================================
+    # Ploting the spectrum
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    nbins = 1000
+    if nbins is not None:
+        if xlog == "log":
+            bins = np.logspace(1, np.log10(5500), nbins)
+        else:
+            bins = np.linspace(0, 5500, nbins)
+    else:
+        if xlog == "log":
+            bins = np.logspace(1, np.log10(5500), 1000)
+        else:
+            bins = np.linspace(0, 5500, 1000)
+    yhist, xhist = np.histogram(sel_energies, bins=bins)
+
+    ener_select, popt, r2 = fitting511(xhist, yhist, 511, lowx, highx)
+    print(f"============ Fit with {len(bins)} bins ============")
+    print("===  Fitting results")
+    if len(popt) == 0:
+        print(f"   Mean = {0} keV       Energy resolution = {0} %  ==")
+    else:
+        print(f"   Mean = {popt[1]} keV       Energy resolution = {popt[2] * 2.3548 / popt[1] * 100} %  ==")
+        ax.scatter(ener_select, gauss_func(ener_select, *popt), color="red", s=2, label="Fit on the 511 keV line", alpha=0.3)
+    print(f"   R² = {r2}")
+    # print("===  Positions")
+    # print(f"   init = {valinit} keV")
+    # print(f"   511 = {val511} keV")
+    # print(f"   end = {valfinal} keV")
+    print()
+    ax.axvline(511)
+    # ax.axvline(lowx)
+    # ax.axvline(highx)
+    # for val in change:
+    #     ax.axvline(val)
+    ax.hist(sel_energies, bins=bins, histtype="step", label="D2B spectrum")
+    ax.axvline(511, label="511 keV value", color="green")
+    ax.set(xlabel="Energy (keV)", ylabel=ylab, xscale=xlog, yscale=ylog)
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def fit_maud_511(filename="corr_abs_maud_filev2.root", graphs=True, begin=None, end=None):
+    """
+
+    :return:
+    """
+    showfit = False
+
+    r2lim = 0.85
+    errorlim = 5
+    nev_min = 2000
+    timestep = 5 * 60
+    finetimestep = 10
+
+    saved_ratio = []
+    saved_date = []
+    saved_r2 = []
+    saved_error = []
+    saved_nev = []
+    saved_reso = []
+
+    loopcount = 0
+    loopunfit = 0
+    oldlen = 0
+    """
+    Extract the kiruna df from a rootfile
+    :return:
+    """
+    with uproot.open(filename) as file:
+        # here, file is a TDirectory, you can display the content with :
+        # print(file.keys())
+        # You can have even more detail on what the key is with :
+        # print(file.classnames())
+        # Accessing the tree
+        tree = file["Events"]
+        saved_columns = ["time_corr_abs", "pps_cpt_corr_abs", "energy"]
+
+        # convert the tree in dataframe
+        data = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size=100000, library="pd")], ignore_index=True)
+
+    timeref = datetime(2024, 6, 22, 20, 0, 0).timestamp()
+    init_time = np.min(data["time_corr_abs"].values)
+    final_time = np.max(data["time_corr_abs"].values)
+    init_date = datetime.fromtimestamp(int(init_time) + timeref)
+    final_date = datetime.fromtimestamp(int(final_time) + timeref)
+
+    if begin is None:
+        begin_ts = int(init_time)
+    else:
+        begin_ts = begin
+    if end is None:
+        finish_ts = int(final_time) + 1
+    else:
+        finish_ts = end
+
+    init_ts = begin_ts
+    end_ts = init_ts + timestep
+    while end_ts <= finish_ts and loopcount < 2000:
+        maud_df_select = data[np.logical_and(data.pps_cpt_corr_abs >= init_ts, data.pps_cpt_corr_abs <= end_ts)]
+        shorted_df = maud_df_select[(maud_df_select.energy.values > 350) & (maud_df_select.energy.values < 685)]
+        nevents = len(shorted_df)
+        # nevents = len(maud_df_select)
+        lr2, lerror = [], []
+        if nevents <= nev_min:
+            ener_select, popt, r2, bins, val511, valinit, valfinal, change = [], [], 0, [], 0, 0, 0, []
+            print(f"Not enough data between {init_ts} and {end_ts} : no fit done")
+        elif loopunfit != 0 and nevents == oldlen:
+            ener_select, popt, r2, bins, val511, valinit, valfinal, change = [], [], 0, [], 0, 0, 0, []
+            # print("Making the sample bigger didn't change the number of values - fit is not performed (added ts has no events)")
+        else:
+            print(f"=== {nevents} events for the time period {init_ts} - {end_ts}")
+            lener_select, lpopt, lr2, lerror, lbins, l511, linit, lfinal, lchange = findbestfit(maud_df_select.energy.values, detailed=True)
+            idmaxr2 = np.argmax(np.where(np.array(lerror) < errorlim, np.array(lr2), 0))
+            # print(idmaxr2)
+            if showfit and fit_validation(lr2, lerror, r2lim, errorlim):
+                # ============================================================================================================================
+                # Ploting the spectrum
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 10))
+                fig.suptitle(f"Period {init_ts} - {end_ts}")
+                xlog = "linear"
+                ylog = "linear"
+                axes = [ax1, ax2, ax3, ax4]
+                tested_nbins = [900, 700, 500, 300]
+                for ite in range(len(lbins)):
+                    print(f"============ Fit with {len(lbins[ite])} bins ============")
+                    print("===  Fitting results")
+                    if len(lpopt[ite]) == 0:
+                        print(f"   Mean = {0} keV       Energy resolution = {0} %  ==")
+                    else:
+                        print(
+                            f"   Mean = {lpopt[ite][1]} keV       Energy resolution = {lpopt[ite][2] * 2.3548 / lpopt[ite][1] * 100} %  ==")
+                        print(f"       Expected - Real ratio : {round(511 / lpopt[ite][1], 3)}")
+                    print(f"   R² = {lr2[ite]}")
+                    print("===  Positions")
+                    print(f"   init = {linit[ite]} keV")
+                    print(f"   511 = {l511[ite]} keV")
+                    print(f"   end = {lfinal[ite]} keV")
+                    print()
+
+                    if len(lpopt[ite]) > 0:
+                        axes[ite].axvline(l511[ite], color="violet", label=f"511 maximum : {round(l511[ite], 3)} keV")
+                        axes[ite].axvline(lpopt[ite][1], color="cyan", label=f"511 fitted : {round(lpopt[ite][1], 3)} keV")
+                        axes[ite].axvline(linit[ite], color="green", label="511 fit interval edges")
+                        axes[ite].axvline(lfinal[ite], color="green")
+                        # for val in lchange[ite]:
+                        #     axes[ite].axvline(val, color="orange", linestyle='--')
+                        # axes[ite].axvline(lchange[ite][0], color="orange", linestyle='--', label="minimum")
+                        # axes[ite].axvline(lchange[ite][1], color="red", linestyle='--', label="maximum")
+                        axes[ite].scatter(lener_select[ite], gauss_func(lener_select[ite], *lpopt[ite]), color="red", s=2, label=f"Fit : R² = {round(lr2[ite], 3)}\n      511peak-511 relative error = {round(lerror[ite], 3)} %")
+                        if fit_validation([lr2[ite]], [lerror[ite]], r2lim, errorlim):
+                            axes[ite].hist(maud_df_select.energy.values, bins=lbins[ite], histtype="step", color="green", label="In flight spectrum")
+                        else:
+                            axes[ite].hist(maud_df_select.energy.values, bins=lbins[ite], histtype="step", color="blue", label="In flight spectrum")
+                        axes[ite].axvline(511, label="511 keV", color="black")
+                        axes[ite].legend()
+                    axes[ite].set(xlabel="Energy (keV)", ylabel="Number of event", xscale=xlog, yscale=ylog, title=f"Fit with nbins = {tested_nbins[ite]}")
+                axes[idmaxr2].text(0.5, 0.9, 'Selected fit', fontsize=12, color='red', alpha=0.7, ha='center', va='bottom', transform=axes[idmaxr2].transAxes)
+                plt.show()
+        if fit_validation(lr2, lerror, r2lim, errorlim):  # Possibly another info to see if the fit is really ok !
+            ratio = 511 / lpopt[idmaxr2][1]
+            if len(saved_ratio) > 0:
+                old_ratio = saved_ratio[-1]
+            else:
+                old_ratio = ratio
+            if np.abs((old_ratio - ratio) / old_ratio) < 0.1:
+                saved_ratio.append(ratio)
+                saved_date.append(f"{init_ts} and {end_ts}")
+                saved_r2.append(lr2[idmaxr2])
+                saved_error.append(lerror[idmaxr2])
+                saved_nev.append(nevents)
+                saved_reso.append(lpopt[idmaxr2][2] * 2.3548 / lpopt[idmaxr2][1] * 100)
+                init_ts = end_ts
+                end_ts += timestep
+                loopcount += 1
+                loopunfit = 0
+                oldlen = 0
+                print(f"Saving value between {init_ts} and {end_ts} ")
+            else:
+                if loopunfit == 0:
+                    print(f"No fit with proper ratio for value between {init_ts} and {end_ts}  -  fine iteration to find a correct fit")
+                end_ts += finetimestep
+                loopunfit += 1
+                oldlen = nevents
+        else:
+            if loopunfit == 0:
+                print(f"No fit for value between {init_ts} and {end_ts}  -  fine iteration to find a correct fit")
+            end_ts += finetimestep
+            loopunfit += 1
+            oldlen = nevents
+
+    if end_ts != finish_ts:
+        print(f"Saving value of this range as the one of previous period ?")
+
+    if graphs:
+        fit_time = (np.array([int(date.split(" ")[-1]) for date in saved_date]) + np.array(
+            [int(date.split(" ")[0]) for date in saved_date])) / 2
+
+        fig1, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, sharex=True)
+        ax1.axhline(1, color="red")
+        ax1.plot(fit_time, saved_ratio, color="blue", label="Original")
+        # ax1.scatter(fit_time, save_ratio, color="pink", s=10)
+        # ax1.plot(fit_time, no_outliers, color="green")
+        # ax1.plot(fit_time, smoothed3, color="orange")
+        # ax1.scatter(fit_time, smoothed3, color="pink", s=10)
+        # ax1.plot(fit_time, no_outliers_smoothed3, color="red", label="Smoothed 3 points")
+        # ax1.plot(fit_time, no_outliers_smoothed5, color="orange", label="Smoothed 5 points")
+        # ax1.scatter(range(init_ts, final_ts + 1), interpol_ratio, color="black", s=5)
+        ax1.legend()
+        ax1.set(ylabel="511 ratio")
+        ax2.plot(fit_time, saved_reso, color="blue")
+        ax2.set(ylabel="Fit resolution (%)")
+        ax3.plot(fit_time, saved_nev)
+        ax3.set(ylabel="N events")
+        ax4.plot(fit_time, saved_r2)
+        ax4.set(ylabel="R²")
+        ax5.plot(fit_time, saved_error)
+        ax5.set(xlabel="Time (s)", ylabel="Relative error (%)")
+        plt.show()
+
+        fig2, (ax11, ax22, ax33) = plt.subplots(3, 1)
+        ax11.axhline(1, color="red")
+        ax11.plot(fit_time, saved_ratio, color="blue", label="Original")
+        ax11.legend()
+        ax11.set(ylabel="511 ratio")
+        ax22.plot(fit_time, saved_reso, color="blue")
+        ax22.set(xlabel="Time (s)", ylabel="Fit resolution (%)")
+
+        ax33.hist(saved_reso, bins=30)
+        ax33.set(xlabel="Fit resolution (%)", ylabel="Count")
+
+        plt.show()
+
+    print("MEAN RESOLUTION : ", np.mean(saved_reso))
+    return saved_ratio, saved_date, saved_r2, saved_error, saved_nev, saved_reso, begin_ts, finish_ts
+
+
 def poly_deg2(x, a, b):
     return a * x**2 + b * x
+
 
 def fit_quad_calib(init_ts, final_ts, save_ratio=None, save_date=None, save_r2=None, save_error=None, save_nev=None):
     # import matplotlib.pyplot as plt
@@ -1040,8 +1302,11 @@ def fit_quad_calib(init_ts, final_ts, save_ratio=None, save_date=None, save_r2=N
                 f.write(f"{range(init_ts, final_ts)[ite]} {interpol_ratio[ite]}\n")
             f.write(f"{final_ts} {interpol_ratio[-1]}")
 
+        return range(init_ts, final_ts), interpol_ratio[:-1]
+
 
 def show_calib_params(calibfile):
+    # mpl.use("Qt5Agg")
     with open(calibfile) as f:
         data = [line.split("\t")[1:] for line in f.read().split("\n")[:-1]]
 
@@ -1158,6 +1423,20 @@ def show_dssd_temp_dependance(file_bulk="./Kiruna_data/calib_dssd/fit_bulk.txt",
     fig_fitbulk.set_constrained_layout(True)
 
     plt.show()
+
+    fig_fit13, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6))
+    poptp, pcovp = curve_fit(affine, xs, peak_mean[13], sigma=peak_mean_err[13])[:2]
+    poptb, pcovb = curve_fit(affine, xs, bulk_mean[13], sigma=bulk_mean_err[13])[:2]
+    ax1.errorbar(xs, peak_mean[13], yerr=peak_mean_err[13], color="blue", label="Peak fitted on the spectrum")
+    ax1.plot(np.linspace(-15, 15, 100), affine(np.linspace(-15, 15, 100), *poptp), color="red", label=f"Fitted variation of the peak : {round(poptp[0], 2)} x + {round(poptp[1], 2)}")
+    ax1.set(xlabel="Temperature °C", ylabel="Peak position (ADC)")
+    ax1.legend()
+    ax2.errorbar(xs, bulk_mean[13], yerr=bulk_mean_err[13], color="blue", label=f"Bump fitted on the spectrum")
+    ax2.plot(np.linspace(-15, 15, 100), affine(np.linspace(-15, 15, 100), *poptb), color="red", label=f"Fitted variation of the bump : {round(poptb[0], 2)} x + {round(poptb[1], 2)}")
+    ax2.set(xlabel="Temperature °C", ylabel="Bump position (ADC)")
+    ax2.legend()
+    fig_fit13.set_constrained_layout(True)
+
 
     # with open("./Kiruna_data/calib_dssd/dssd_temp_corr_coefs", "w") as f:
     #     f.write("std::vector<Double_t> peak_a = {")

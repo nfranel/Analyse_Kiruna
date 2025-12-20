@@ -98,15 +98,15 @@ int main()
 
 
 // ====================================================================================================
-// creating new timestamps with absolute time reference being abs_gps_time_ref = 1719079200 (22nd june 20:00:00)
+// creating new timestamps with absolute time reference being abs_gps_time_ref = 1719079200 (22nd june 20:00:00 local time, 18:00:00 UTC)
 // At 23:00:52 gps - abs_gps_time_ref take the value 97252 (37h and 52sec)
 //    After doing this with gps time we get :
 //    gps - abs_gps_time_ref first get the value 97252 for pps_corr = 78721
 //    then as pps_corr_abs = 97252 at this time (to match the gps) : pps_corr_abs = pps_corr - abs_pps_time_ref
 //     then abs_pps_time_ref = pps_corr - pps_corr_abs = 97252 - 78721 = 18531
 // ====================================================================================================
-    uint32_t abs_gps_time_ref = 1719079200;
-    uint32_t abs_pps_time_ref = 18531;
+    int32_t abs_gps_time_ref = 1719079200;
+    int32_t abs_pps_time_ref = 18531;
     std::cout << "\n=======================================================================================" << std::endl;
     std::cout << " Absolute time origin is set the 23rd of june 20:00:00  :   " << abs_gps_time_ref << std::endl;
     std::cout << " Time correction to the GPS time is :   " << abs_gps_time_ref << std::endl;
@@ -118,13 +118,16 @@ int main()
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Aligning Maud with time origin "<< std::endl;
+//    const std::string fname_maud_corr_absv2 = "corr_abs_maud_filevuncorr.root";
+//    const std::string fname_maud_corr_absv2 = "corr_abs_maud_filevtemp.root";
+//    ChangeTimeOriginIJCLAB(fname_maud_corr, fname_maud_corr_absv2, "maud", abs_gps_time_ref);
 //    ChangeTimeOriginIJCLAB(fname_maud_corr, fname_maud_corr_abs, "maud", abs_gps_time_ref);
     std::cout << " Time origin set ! "<< std::endl;
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Aligning DSSD with time origin "<< std::endl;
 //    ChangeTimeOriginIJCLAB(fname_dssd_corr, fname_dssd_corr_abs, "dssd", abs_gps_time_ref);
-//    DisplayDSSDChannels(fname_dssd_corr_abs);
+    DisplayDSSDChannels2(fname_dssd_corr_abs);
     std::cout << " Time origin set ! "<< std::endl;
 
     std::cout << "=======================================================================================" << std::endl;
@@ -160,10 +163,10 @@ int main()
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Creating the full data tree "<< std::endl;
-    MakeWholeDataTree(fname_final_tree, fname_cea_corr_abs, fname_dssd_corr_abs, fname_ucd_corr_abs, fname_maud_corr_abs);
+//    MakeWholeDataTree(fname_final_tree, fname_cea_corr_abs, fname_dssd_corr_abs, fname_ucd_corr_abs, fname_maud_corr_abs);
     std::cout << " Whole data file created ! "<< std::endl;
 
-    std::exit(EXIT_SUCCESS);
+//    std::exit(EXIT_SUCCESS);
 
 // ====================================================================================================
 // Making the coincidences and possibly printing the delay between events
@@ -182,133 +185,128 @@ int main()
     std::vector<uint64_t> idx_maud_maud_dssd;
     std::vector<uint64_t> idx_dssd_maud_dssd;
     std::vector<Double_t> coinc_delays_maud_dssd;
-    FindCoincidences(fname_maud_corr_abs, fname_dssd_corr_abs, idx_maud_maud_dssd, idx_dssd_maud_dssd, coinc_delays_maud_dssd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_maud_corr_abs, fname_dssd_corr_abs, idx_maud_maud_dssd, idx_dssd_maud_dssd, coinc_delays_maud_dssd, window_delay, display_coinc_delay, coinc_canvases, "D2B-D1B");
 
     std::cout << " == Maud - UCDA == "<< std::endl;
     std::vector<uint64_t> idx_maud_maud_ucda;
     std::vector<uint64_t> idx_ucda_maud_ucda;
     std::vector<Double_t> coinc_delays_maud_ucda;
-    FindCoincidences(fname_maud_corr_abs, fname_ucda_corr_abs, idx_maud_maud_ucda, idx_ucda_maud_ucda, coinc_delays_maud_ucda, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_maud_corr_abs, fname_ucda_corr_abs, idx_maud_maud_ucda, idx_ucda_maud_ucda, coinc_delays_maud_ucda, window_delay, display_coinc_delay, coinc_canvases, "D2B-D2AA");
 
     std::cout << " == Maud - UCDB == "<< std::endl;
     std::vector<uint64_t> idx_maud_maud_ucdb;
     std::vector<uint64_t> idx_ucdb_maud_ucdb;
     std::vector<Double_t> coinc_delays_maud_ucdb;
-    FindCoincidences(fname_maud_corr_abs, fname_ucdb_corr_abs, idx_maud_maud_ucdb, idx_ucdb_maud_ucdb, coinc_delays_maud_ucdb, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_maud_corr_abs, fname_ucdb_corr_abs, idx_maud_maud_ucdb, idx_ucdb_maud_ucdb, coinc_delays_maud_ucdb, window_delay, display_coinc_delay, coinc_canvases, "D2B-D2AB");
 
     std::cout << " == Maud - UCDC == "<< std::endl;
     std::vector<uint64_t> idx_maud_maud_ucdc;
     std::vector<uint64_t> idx_ucdc_maud_ucdc;
     std::vector<Double_t> coinc_delays_maud_ucdc;
-    FindCoincidences(fname_maud_corr_abs, fname_ucdc_corr_abs, idx_maud_maud_ucdc, idx_ucdc_maud_ucdc, coinc_delays_maud_ucdc, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_maud_corr_abs, fname_ucdc_corr_abs, idx_maud_maud_ucdc, idx_ucdc_maud_ucdc, coinc_delays_maud_ucdc, window_delay, display_coinc_delay, coinc_canvases, "D2B-D2AC");
 
     std::cout << " == Maud - UCDD == "<< std::endl;
     std::vector<uint64_t> idx_maud_maud_ucdd;
     std::vector<uint64_t> idx_ucdd_maud_ucdd;
     std::vector<Double_t> coinc_delays_maud_ucdd;
-    FindCoincidences(fname_maud_corr_abs, fname_ucdd_corr_abs, idx_maud_maud_ucdd, idx_ucdd_maud_ucdd, coinc_delays_maud_ucdd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_maud_corr_abs, fname_ucdd_corr_abs, idx_maud_maud_ucdd, idx_ucdd_maud_ucdd, coinc_delays_maud_ucdd, window_delay, display_coinc_delay, coinc_canvases, "D2B-D2AD");
 
     std::cout << " == DSSD - UCDA == "<< std::endl;
     std::vector<uint64_t> idx_dssd_dssd_ucda;
     std::vector<uint64_t> idx_ucda_dssd_ucda;
     std::vector<Double_t> coinc_delays_dssd_ucda;
-    FindCoincidences(fname_dssd_corr_abs, fname_ucda_corr_abs, idx_dssd_dssd_ucda, idx_ucda_dssd_ucda, coinc_delays_dssd_ucda, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_dssd_corr_abs, fname_ucda_corr_abs, idx_dssd_dssd_ucda, idx_ucda_dssd_ucda, coinc_delays_dssd_ucda, window_delay, display_coinc_delay, coinc_canvases, "D1B-D2AA");
 
     std::cout << " == DSSD - UCDB == "<< std::endl;
     std::vector<uint64_t> idx_dssd_dssd_ucdb;
     std::vector<uint64_t> idx_ucdb_dssd_ucdb;
     std::vector<Double_t> coinc_delays_dssd_ucdb;
-    FindCoincidences(fname_dssd_corr_abs, fname_ucdb_corr_abs, idx_dssd_dssd_ucdb, idx_ucdb_dssd_ucdb, coinc_delays_dssd_ucdb, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_dssd_corr_abs, fname_ucdb_corr_abs, idx_dssd_dssd_ucdb, idx_ucdb_dssd_ucdb, coinc_delays_dssd_ucdb, window_delay, display_coinc_delay, coinc_canvases, "D1B-D2AB");
 
     std::cout << " == DSSD - UCDC == "<< std::endl;
     std::vector<uint64_t> idx_dssd_dssd_ucdc;
     std::vector<uint64_t> idx_ucdc_dssd_ucdc;
     std::vector<Double_t> coinc_delays_dssd_ucdc;
-    FindCoincidences(fname_dssd_corr_abs, fname_ucdc_corr_abs, idx_dssd_dssd_ucdc, idx_ucdc_dssd_ucdc, coinc_delays_dssd_ucdc, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_dssd_corr_abs, fname_ucdc_corr_abs, idx_dssd_dssd_ucdc, idx_ucdc_dssd_ucdc, coinc_delays_dssd_ucdc, window_delay, display_coinc_delay, coinc_canvases, "D1B-D2AC");
 
     std::cout << " == DSSD - UCDD == "<< std::endl;
     std::vector<uint64_t> idx_dssd_dssd_ucdd;
     std::vector<uint64_t> idx_ucdd_dssd_ucdd;
     std::vector<Double_t> coinc_delays_dssd_ucdd;
-    FindCoincidences(fname_dssd_corr_abs, fname_ucdd_corr_abs, idx_dssd_dssd_ucdd, idx_ucdd_dssd_ucdd, coinc_delays_dssd_ucdd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_dssd_corr_abs, fname_ucdd_corr_abs, idx_dssd_dssd_ucdd, idx_ucdd_dssd_ucdd, coinc_delays_dssd_ucdd, window_delay, display_coinc_delay, coinc_canvases, "D1B-D2AD");
 
     std::cout << " == UCDA - UCDB == "<< std::endl;
     std::vector<uint64_t> idx_ucda_ucda_ucdb;
     std::vector<uint64_t> idx_ucdb_ucda_ucdb;
     std::vector<Double_t> coinc_delays_ucda_ucdb;
-    FindCoincidences(fname_ucda_corr_abs, fname_ucdb_corr_abs, idx_ucda_ucda_ucdb, idx_ucdb_ucda_ucdb, coinc_delays_ucda_ucdb, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_ucda_corr_abs, fname_ucdb_corr_abs, idx_ucda_ucda_ucdb, idx_ucdb_ucda_ucdb, coinc_delays_ucda_ucdb, window_delay, display_coinc_delay, coinc_canvases, "D2AA-D2AB");
 
     std::cout << " == UCDA - UCDC == "<< std::endl;
     std::vector<uint64_t> idx_ucda_ucda_ucdc;
     std::vector<uint64_t> idx_ucdc_ucda_ucdc;
     std::vector<Double_t> coinc_delays_ucda_ucdc;
-    FindCoincidences(fname_ucda_corr_abs, fname_ucdc_corr_abs, idx_ucda_ucda_ucdc, idx_ucdc_ucda_ucdc, coinc_delays_ucda_ucdc, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_ucda_corr_abs, fname_ucdc_corr_abs, idx_ucda_ucda_ucdc, idx_ucdc_ucda_ucdc, coinc_delays_ucda_ucdc, window_delay, display_coinc_delay, coinc_canvases, "D2AA-D2AC");
 
     std::cout << " == UCDA - UCDD == "<< std::endl;
     std::vector<uint64_t> idx_ucda_ucda_ucdd;
     std::vector<uint64_t> idx_ucdd_ucda_ucdd;
     std::vector<Double_t> coinc_delays_ucda_ucdd;
-    FindCoincidences(fname_ucda_corr_abs, fname_ucdd_corr_abs, idx_ucda_ucda_ucdd, idx_ucdd_ucda_ucdd, coinc_delays_ucda_ucdd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_ucda_corr_abs, fname_ucdd_corr_abs, idx_ucda_ucda_ucdd, idx_ucdd_ucda_ucdd, coinc_delays_ucda_ucdd, window_delay, display_coinc_delay, coinc_canvases, "D2AA-D2AD");
 
     std::cout << " == UCDB - UCDC == "<< std::endl;
     std::vector<uint64_t> idx_ucdb_ucdb_ucdc;
     std::vector<uint64_t> idx_ucdc_ucdb_ucdc;
     std::vector<Double_t> coinc_delays_ucdb_ucdc;
-    FindCoincidences(fname_ucdb_corr_abs, fname_ucdc_corr_abs, idx_ucdb_ucdb_ucdc, idx_ucdc_ucdb_ucdc, coinc_delays_ucdb_ucdc, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_ucdb_corr_abs, fname_ucdc_corr_abs, idx_ucdb_ucdb_ucdc, idx_ucdc_ucdb_ucdc, coinc_delays_ucdb_ucdc, window_delay, display_coinc_delay, coinc_canvases, "D2AB-D2AC");
 
     std::cout << " == UCDB - UCDD == "<< std::endl;
     std::vector<uint64_t> idx_ucdb_ucdb_ucdd;
     std::vector<uint64_t> idx_ucdd_ucdb_ucdd;
     std::vector<Double_t> coinc_delays_ucdb_ucdd;
-    FindCoincidences(fname_ucdb_corr_abs, fname_ucdd_corr_abs, idx_ucdb_ucdb_ucdd, idx_ucdd_ucdb_ucdd, coinc_delays_ucdb_ucdd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_ucdb_corr_abs, fname_ucdd_corr_abs, idx_ucdb_ucdb_ucdd, idx_ucdd_ucdb_ucdd, coinc_delays_ucdb_ucdd, window_delay, display_coinc_delay, coinc_canvases, "D2AB-D2AD");
 
     std::cout << " == UCDC - UCDD == "<< std::endl;
     std::vector<uint64_t> idx_ucdc_ucdc_ucdd;
     std::vector<uint64_t> idx_ucdd_ucdc_ucdd;
     std::vector<Double_t> coinc_delays_ucdc_ucdd;
-    FindCoincidences(fname_ucdc_corr_abs, fname_ucdd_corr_abs, idx_ucdc_ucdc_ucdd, idx_ucdd_ucdc_ucdd, coinc_delays_ucdc_ucdd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_ucdc_corr_abs, fname_ucdd_corr_abs, idx_ucdc_ucdc_ucdd, idx_ucdd_ucdc_ucdd, coinc_delays_ucdc_ucdd, window_delay, display_coinc_delay, coinc_canvases, "D2AC-D2AD");
 
 
 //    std::cout << " == CEA - Maud == "<< std::endl;
 //    std::vector<uint64_t> idx_cea_cea_maud;
 //    std::vector<uint64_t> idx_maud_cea_maud;
 //    std::vector<Double_t> coinc_delays_cea_maud;
-//    FindCoincidences(fname_cea_corr_abs, fname_maud_corr_abs, idx_cea_cea_maud, idx_maud_cea_maud, coinc_delays_cea_maud, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_cea_corr_abs, fname_maud_corr_abs, idx_cea_cea_maud, idx_maud_cea_maud, coinc_delays_cea_maud, window_delay, display_coinc_delay, coinc_canvases, "D1A-D2B");
 //
 //    std::cout << " == CEA - DSSD == "<< std::endl;
 //    std::vector<uint64_t> idx_cea_cea_dssd;
 //    std::vector<uint64_t> idx_dssd_cea_dssd;
 //    std::vector<Double_t> coinc_delays_cea_dssd;
-//    FindCoincidences(fname_cea_corr_abs, fname_dssd_corr_abs, idx_cea_cea_dssd, idx_dssd_cea_dssd, coinc_delays_cea_dssd, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_cea_corr_abs, fname_dssd_corr_abs, idx_cea_cea_dssd, idx_dssd_cea_dssd, coinc_delays_cea_dssd, window_delay, display_coinc_delay, coinc_canvases, "D1A-D1B");
 //
 //    std::cout << " == CEA - UCDA == "<< std::endl;
 //    std::vector<uint64_t> idx_cea_cea_ucda;
 //    std::vector<uint64_t> idx_ucda_cea_ucda;
 //    std::vector<Double_t> coinc_delays_cea_ucda;
-//    FindCoincidences(fname_cea_corr_abs, fname_ucda_corr_abs, idx_cea_cea_ucda, idx_ucda_cea_ucda, coinc_delays_cea_ucda, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_cea_corr_abs, fname_ucda_corr_abs, idx_cea_cea_ucda, idx_ucda_cea_ucda, coinc_delays_cea_ucda, window_delay, display_coinc_delay, coinc_canvases, "D1A-D2AA");
 //
 //    std::cout << " == CEA - UCDB == "<< std::endl;
 //    std::vector<uint64_t> idx_cea_cea_ucdb;
 //    std::vector<uint64_t> idx_ucdb_cea_ucdb;
 //    std::vector<Double_t> coinc_delays_cea_ucdb;
-//    FindCoincidences(fname_cea_corr_abs, fname_ucdb_corr_abs, idx_cea_cea_ucdb, idx_ucdb_cea_ucdb, coinc_delays_cea_ucdb, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_cea_corr_abs, fname_ucdb_corr_abs, idx_cea_cea_ucdb, idx_ucdb_cea_ucdb, coinc_delays_cea_ucdb, window_delay, display_coinc_delay, coinc_canvases, "D1A-D2AB");
 //
 //    std::cout << " == CEA - UCDC == "<< std::endl;
 //    std::vector<uint64_t> idx_cea_cea_ucdc;
 //    std::vector<uint64_t> idx_ucdc_cea_ucdc;
 //    std::vector<Double_t> coinc_delays_cea_ucdc;
-//    FindCoincidences(fname_cea_corr_abs, fname_ucdc_corr_abs, idx_cea_cea_ucdc, idx_ucdc_cea_ucdc, coinc_delays_cea_ucdc, window_delay, display_coinc_delay, coinc_canvases);
+//    FindCoincidences(fname_cea_corr_abs, fname_ucdc_corr_abs, idx_cea_cea_ucdc, idx_ucdc_cea_ucdc, coinc_delays_cea_ucdc, window_delay, display_coinc_delay, coinc_canvases, "D1A-D2AC");
 //
 //    std::cout << " == CEA - UCDD == "<< std::endl;
 //    std::vector<uint64_t> idx_cea_cea_ucdd;
 //    std::vector<uint64_t> idx_ucdd_cea_ucdd;
 //    std::vector<Double_t> coinc_delays_cea_ucdd;
-//    FindCoincidences(fname_cea_corr_abs, fname_ucdd_corr_abs, idx_cea_cea_ucdd, idx_ucdd_cea_ucdd, coinc_delays_cea_ucdd, window_delay, display_coinc_delay, coinc_canvases);
-
-// ====================================================================================================
-// Making new trees with coincidences
-// ====================================================================================================
-
+//    FindCoincidences(fname_cea_corr_abs, fname_ucdd_corr_abs, idx_cea_cea_ucdd, idx_ucdd_cea_ucdd, coinc_delays_cea_ucdd, window_delay, display_coinc_delay, coinc_canvases, "D1A-D2AD");
 
 // ====================================================================================================
 // Extracting the final root trees
@@ -318,7 +316,7 @@ int main()
         std::cerr << "Erreur lors de l'ouverture du fichier." << std::endl;
     }
     auto final_tree_maud = (TTree*) final_file_maud->Get("Events");
-//    final_tree_maud->Show(0);
+    final_tree_maud->Show(0);
 
     auto final_file_dssd = new TFile(fname_dssd_corr_abs.c_str());
     if (!final_file_dssd || final_file_dssd->IsZombie()) {
@@ -331,13 +329,13 @@ int main()
 // Creating tree variables for maud
 // ====================================================================================================
     uint32_t ts_init_maud;
-    uint32_t pps_cpt_init_maud;
-    uint32_t pps_cpt_corr_maud;
-    uint32_t gps_corr_maud;
+    int32_t pps_cpt_init_maud;
+    int32_t pps_cpt_corr_maud;
+    int32_t gps_corr_maud;
     uint32_t ts_corr_abs_maud;
-    uint32_t pps_cpt_corr_abs_maud;
-    uint32_t pps_cpt_nocorr_abs_maud;
-    uint32_t gps_corr_abs_maud;
+    int32_t pps_cpt_corr_abs_maud;
+    int32_t pps_cpt_nocorr_abs_maud;
+    int32_t gps_corr_abs_maud;
     Double_t time_corr_abs_maud;
     final_tree_maud->SetBranchAddress("ts_init",       &ts_init_maud);
     final_tree_maud->SetBranchAddress("pps_cpt_init",  &pps_cpt_init_maud);
@@ -353,13 +351,13 @@ int main()
 // Creating tree variables for dssd
 // ====================================================================================================
     uint32_t ts_init_dssd;
-    uint32_t pps_cpt_init_dssd;
-    uint32_t pps_cpt_corr_dssd;
-    uint32_t gps_corr_dssd;
+    int32_t pps_cpt_init_dssd;
+    int32_t pps_cpt_corr_dssd;
+    int32_t gps_corr_dssd;
     uint32_t ts_corr_abs_dssd;
-    uint32_t pps_cpt_corr_abs_dssd;
-    uint32_t pps_cpt_nocorr_abs_dssd;
-    uint32_t gps_corr_abs_dssd;
+    int32_t pps_cpt_corr_abs_dssd;
+    int32_t pps_cpt_nocorr_abs_dssd;
+    int32_t gps_corr_abs_dssd;
     Double_t time_corr_abs_dssd;
     final_tree_dssd->SetBranchAddress("ts_init",       &ts_init_dssd);
     final_tree_dssd->SetBranchAddress("pps_cpt_init",  &pps_cpt_init_dssd);
@@ -400,13 +398,14 @@ int main()
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "   " << glitch_corr_count_dssd << " over " << nentries_dssd << " events : " << static_cast<Double_t>(glitch_corr_count_dssd) /static_cast<Double_t>(nentries_dssd) * 100. << "% of error" << std::endl;
 
+    std::exit(EXIT_SUCCESS);
 
     std::cout << "\n=======================================================================================" << std::endl;
     std::cout << " Checking the time difference between pps and GPS and comparing Maud and DSSD differences "<< std::endl;
     std::cout << "=======================================================================================" << std::endl;
 //    uint64_t entry_offset_for_diff = 10; // It's used to account for some misalignment (check is some problems are still there)
-    uint32_t old_count;
-    uint32_t old_pps_count;
+    int32_t old_count;
+    int32_t old_pps_count;
     std::vector<Double_t> vec_gps_maud;
     std::vector<Double_t> diff_gps_pps_maud;
     std::vector<Double_t> diff_gps_pps_maud_corr;
@@ -475,7 +474,7 @@ int main()
             idx_maud_loop.clear();
             idx_dssd_loop.clear();
             coincidence_delays_loop.clear();
-            FindCoincidences(fname_maud_corr_abs, fname_dssd_corr_abs, idx_maud_loop, idx_dssd_loop, coincidence_delays_loop, window, false, empty_canvases);
+            FindCoincidences(fname_maud_corr_abs, fname_dssd_corr_abs, idx_maud_loop, idx_dssd_loop, coincidence_delays_loop, window, false, empty_canvases, "D2B-D1B");
             coincidence_num.push_back(coincidence_delays_loop.size());
             win_list.push_back(window);
             window = window * step;

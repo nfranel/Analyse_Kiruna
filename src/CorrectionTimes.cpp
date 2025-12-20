@@ -59,6 +59,7 @@ void ADCFormatingIJCLAB(const uint16_t *ener1, const uint16_t *ener2, Double_t &
     // Divide the value by the correction value (between 0 and 1)
     // Use the function to obtain energy : ax+b with a and b depending on temperature
     if (detector == "maud") {
+        // Filling the adc_channel variable with pedestal-corrected ADC values
         for (uint64_t i = 0; i<32; i++){
             if (ener1[i] > pedestals[i]) {
                 adc_channels[i] = ener1[i] - pedestals[i];
@@ -71,7 +72,7 @@ void ADCFormatingIJCLAB(const uint16_t *ener1, const uint16_t *ener2, Double_t &
                 adc_channels[i+32] = 0;
             }
         }
-
+        // Searching the channel this highest ADC
         uint64_t ref_pixel_idx = 0;
         uint16_t max_adc = adc_channels[0];
         for (uint64_t i = 1; i<64; i++){
@@ -80,20 +81,15 @@ void ADCFormatingIJCLAB(const uint16_t *ener1, const uint16_t *ener2, Double_t &
                 max_adc = adc_channels[i];
             }
         }
-
+        // Calculation of the event's energy (in ADC) by summing the channels' ADC and applying a correction
+        // The correction is due to the event being in the centre (corr ~ 1) or on the edge (corr < 1) of the crystal
         Double_t ener = 0;
         for (uint64_t i = 0; i<64; i++){
             ener += static_cast<Double_t>(adc_channels[i]);
         }
         energy_adc = ener / correction[ref_pixel_idx] / 64.;
-
     } else if (detector == "dssd") {
-        energy_adc = 0.;
-        for (uint64_t i = 0; i<32; i++){
-            adc_channels[i] = ener1[i];
-            adc_channels[i+32] = ener2[i];
-        }
-    } else if (detector == "cea") {
+        // Filling the adc_channel variable ADC values
         energy_adc = 0.;
         for (uint64_t i = 0; i<32; i++){
             adc_channels[i] = ener1[i];
@@ -118,7 +114,6 @@ void ADCFormatingCEA(const Double_t *ener1, const Double_t *ener2, Double_t &ene
     return;
 }
 
-
 Double_t ADCtoEnergyMaud(const Double_t ener_adc, const Double_t temp, const Double_t correction) {
     Double_t energy;
     // Calibration with lab measurements
@@ -135,29 +130,64 @@ Double_t ADCtoEnergyMaud(const Double_t ener_adc, const Double_t temp, const Dou
     return energy;
 }
 
-Double_t ADCtoEnergyDSSD(const Double_t *adc_channels, Double_t *adc_channels_calib, const Double_t temp, const Double_t coeffs[64][8]) {
+Double_t ADCtoEnergyDSSD(const uint16_t *adc_channels, Double_t *adc_channels_calib, Double_t *adc_channels_calib_corr, const Double_t temp, const Double_t coeffs[64][8]) {
     Double_t energy = 0.;
-    Double_t coef_a;
-    Double_t coef_b;
-    Double_t coef_c;
-    Double_t coef_d;
+//    Double_t coef_a;
+//    Double_t coef_b;
+//    Double_t coef_c;
+//    Double_t coef_d;
+    Double_t coef_a_25;
+    Double_t coef_b_25;
+    Double_t coef_c_25;
+    Double_t coef_d_25;
+    Double_t temp_calib_file = 25.;
+    std::vector<Double_t> a_corr = {-1.039, -0.855, -1.326, -1.08 , -0.989, -0.703, -0.523, -0.455, -0.955, -0.738, -0.312, -0.777, -0.556, -1.005, -0.86 , -0.581, -0.555, -0.506, -0.559, -0.605, -0.528, -0.635, -0.596, -0.308, -0.574, -0.218, -0.291, -0.494, -0.976, -0.391, -0.884, -0.727};
+    std::vector<Double_t> b_corr = {554.288, 578.023, 670.033, 561.88 , 561.365, 558.516, 537.331, 563.017, 565.101, 542.656, 536.488, 548.783, 539.049, 542.394, 536.056, 548.699, 542.01 , 535.695, 541.572, 539.59 , 544.178, 524.454, 535.094, 531.449, 544.596, 537.483, 551.105, 546.186, 542.047, 555.329, 564.022, 570.375};
+    Double_t corr;
     for (uint64_t i = 0; i<64; i++){
-        coef_a = coeffs[i][0] + coeffs[i][1] * temp;
-        coef_b = coeffs[i][2] + coeffs[i][3] * temp;
-        coef_c = coeffs[i][4] + coeffs[i][5] * temp;
-        coef_d = coeffs[i][6] + coeffs[i][7] * temp;
-        adc_channels_calib[i] = 1000 * (coef_a + coef_b * adc_channels[i] + coef_c * adc_channels[i] * adc_channels[i] + coef_d * adc_channels[i] * adc_channels[i] * adc_channels[i]);
-
-        if (adc_channels_calib[i] > 0.) {
-            energy += adc_channels_calib[i];
-        } else {
+        // CAREFULL the first component of coeffs has as origin 25°C
+        coef_a_25 = coeffs[i][0];
+        coef_b_25 = coeffs[i][2];
+        coef_c_25 = coeffs[i][4];
+        coef_d_25 = coeffs[i][6];
+        // We multiply by 1000 to have the correct unit (keV)
+        adc_channels_calib[i] = 1000 * (coef_a_25 + coef_b_25 * adc_channels[i] + coef_c_25 * adc_channels[i] * adc_channels[i] + coef_d_25 * adc_channels[i] * adc_channels[i] * adc_channels[i]);
+        if (adc_channels_calib[i] < 0.) {
             adc_channels_calib[i] = 0.;
         }
+
+//        // CAREFULL the first component of coeffs has as origin 25°C
+//        coef_a = coeffs[i][0] + coeffs[i][1] * (temp - temp_calib_file);
+//        coef_b = coeffs[i][2] + coeffs[i][3] * (temp - temp_calib_file);
+//        coef_c = coeffs[i][4] + coeffs[i][5] * (temp - temp_calib_file);
+//        coef_d = coeffs[i][6] + coeffs[i][7] * (temp - temp_calib_file);
+//        adc_channels_calib_corr[i] = 1000 * (coef_a + coef_b * adc_channels[i] + coef_c * adc_channels[i] * adc_channels[i] + coef_d * adc_channels[i] * adc_channels[i] * adc_channels[i]);
+//        std::cout << adc_channels_calib_corr[i] << "  " << adc_channels_calib[i] << std::endl;
+        // Latest correction, proportional correction with respect to 25° and to the bump
+        // Bump variation is calculated, bump at 25° according to the variation is obtained
+        // correction is obtained by comparing bump at T and at 25°
+        // Then we have Ecorr = E / corr(T)
+        if (i >= 32) {
+//            corr = (a_corr[i - 32] * temp + b_corr[i - 32]) / (a_corr[i - 32] * temp_calib_file + b_corr[i - 32]);
+            corr = (a_corr[i - 32] * temp + b_corr[i - 32]) / 676;
+//            std::cout << << " " << << " " << corr << std::endl;
+//            std::cout << corr << std::endl;
+            adc_channels_calib_corr[i] = adc_channels_calib[i] / corr;
+        } else {
+            adc_channels_calib_corr[i] = adc_channels_calib[i];
+        }
     }
+    uint64_t max_idx = 0;
+    for (uint64_t i = 1; i<64; i++){
+        if (adc_channels_calib_corr[i] > adc_channels_calib_corr[i-1]) {
+            max_idx = i;
+        }
+    }
+    energy = adc_channels_calib_corr[max_idx];
     return energy;
 }
 
-Double_t ADCtoEnergyCEA(const Double_t *adc_channels, Double_t *adc_channels_calib, const Double_t temp, const Double_t coeffs[64][8]) {
+Double_t ADCtoEnergyCEA(const uint16_t *adc_channels, Double_t *adc_channels_calib, const Double_t temp, const Double_t coeffs[64][8]) {
     Double_t energy = 0.;
     Double_t coef_a;
     Double_t coef_b;
@@ -180,6 +210,7 @@ Double_t ADCtoEnergyCEA(const Double_t *adc_channels, Double_t *adc_channels_cal
 }
 
 void ADCTempCorrectionDSSD(const uint16_t *adc_channels, Double_t *adc_channels_corr, const Double_t temp) {
+    // a and b parameters of the affine function
     std::vector<Double_t> peak_a = {0.036716, 0.131445, 0.062599, 0.095734, 0.102531, 0.104413, 0.140915, 0.136512, 0.098898, 0.16447, 0.174816, 0.166083, 0.189503, 0.16458, 0.134001, 0.18001, 0.181169, 0.202537, 0.184703, 0.193654, 0.181026, 0.194065, 0.18256, 0.172182, 0.462903, 0.12925, 0.202558, 0.172908, 0.095815, 0.08862, 0.070518, 0.101594};
     std::vector<Double_t> peak_b = {90.271101, 76.100973, 76.508661, 141.380324, 74.719918, 73.90952, 137.309308, 72.493295, 74.396593, 73.718072, 72.328855, 71.554289, 71.762032, 73.482051, 72.323857, 71.98295, 72.441124, 71.740608, 72.07533, 71.566482, 73.003177, 71.484204, 71.522837, 71.590043, 130.925712, 238.847331, 73.02934, 72.792331, 145.007932, 258.649297, 201.89576, 84.206379};
     std::vector<Double_t> bulk_a = {-1.015557, -0.787783, -1.262267, -0.779096, -0.98369, -0.46709, -0.47222, -0.3871, -0.683492, -0.649886, -0.301839, -0.648335, -0.422, -0.627697, -0.632843, -0.542424, -0.494638, -0.489997, -0.354492, -0.711634, -0.504241, -0.661699, -0.501675, -0.374338, -0.351215, -0.183012, -0.211629, -0.498082, -0.676097, -0.409012, -1.041214, -0.5786};
@@ -351,7 +382,7 @@ void ADCTempCorrectionCEA(const uint16_t *adc_channels, Double_t *adc_channels_c
 //    std::exit(EXIT_SUCCESS);
 }
 
-void ExtractTemperatureValues(std::vector<Double_t> &tempvec, std::vector<uint32_t> &tsvec, const std::string timestamp_filename) {
+void ExtractTemperatureValues(std::vector<Double_t> &tempvec, std::vector<int32_t> &tsvec, const std::string timestamp_filename) {
     size_t start, end;
     uint16_t tokencounting;
     std::ifstream timestamp_file(timestamp_filename); // Open file
@@ -375,7 +406,7 @@ void ExtractTemperatureValues(std::vector<Double_t> &tempvec, std::vector<uint32
         while ((end = tsline.find_first_of(delim, start)) != std::string::npos) {
             if (end != start) { // Ignore consecutive delimitors
                 if (tokencounting == 2) {
-                    tsvec.push_back(static_cast<uint32_t>(std::stoi(tsline.substr(start, end - start))));
+                    tsvec.push_back(static_cast<int32_t>(std::stoi(tsline.substr(start, end - start))));
                 }
                 tokencounting += 1;
             }
@@ -388,14 +419,18 @@ void ExtractTemperatureValues(std::vector<Double_t> &tempvec, std::vector<uint32
     timestamp_file.close();
 }
 
-void FindTemperature(const uint32_t pps_timestamp, Double_t &temp_final, uint64_t &ite_init, const std::vector<uint32_t> timestamp_vec, std::vector<Double_t> temperature_vec) {
+void FindTemperature(const int32_t pps_timestamp, Double_t &temp_final, uint64_t &ite_init, const std::vector<int32_t> timestamp_vec, std::vector<Double_t> temperature_vec) {
     uint64_t loop_starter = ite_init;
     for (uint64_t i = loop_starter; i<timestamp_vec.size(); i++) {
         if (pps_timestamp <= timestamp_vec[i]) {
             if (pps_timestamp == timestamp_vec[i]) {
                 temp_final = temperature_vec[i];
             } else {
-                temp_final = temperature_vec[i - 1] + (temperature_vec[i] - temperature_vec[i - 1]) / (timestamp_vec[i] - timestamp_vec[i - 1]) * (pps_timestamp - timestamp_vec[i - 1]);
+                if (i == 0) {
+                    temp_final = temperature_vec[i];
+                } else {
+                    temp_final = temperature_vec[i - 1] + (temperature_vec[i] - temperature_vec[i - 1]) / (timestamp_vec[i] - timestamp_vec[i - 1]) * (pps_timestamp - timestamp_vec[i - 1]);
+                }
             }
             return;
         }
@@ -404,7 +439,7 @@ void FindTemperature(const uint32_t pps_timestamp, Double_t &temp_final, uint64_
     return;
 }
 
-void ExtractCorrectionValues(std::vector<Double_t> &corrvec, std::vector<uint32_t> &tsvec, const std::string correction_filename) {
+void ExtractCorrectionValues(std::vector<Double_t> &corrvec, std::vector<int32_t> &tsvec, const std::string correction_filename) {
     size_t start, end;
     uint16_t tokencounting;
     std::ifstream timestamp_file(correction_filename); // Open file
@@ -428,7 +463,7 @@ void ExtractCorrectionValues(std::vector<Double_t> &corrvec, std::vector<uint32_
         while ((end = tsline.find_first_of(delim, start)) != std::string::npos) {
             if (end != start) { // Ignore consecutive delimitors
                 if (tokencounting == 0) {
-                    tsvec.push_back(static_cast<uint32_t>(std::stoi(tsline.substr(start, end - start))));
+                    tsvec.push_back(static_cast<int32_t>(std::stoi(tsline.substr(start, end - start))));
                 }
                 tokencounting += 1;
             }
@@ -441,7 +476,7 @@ void ExtractCorrectionValues(std::vector<Double_t> &corrvec, std::vector<uint32_
     timestamp_file.close();
 }
 
-void FindCorrection(const uint32_t pps_timestamp, Double_t &correction, uint64_t &ite_init, const std::vector<uint32_t> timestamp_vec, std::vector<Double_t> correction_vec) {
+void FindCorrection(const int32_t pps_timestamp, Double_t &correction, uint64_t &ite_init, const std::vector<int32_t> timestamp_vec, std::vector<Double_t> correction_vec) {
     uint64_t loop_starter = ite_init;
     for (uint64_t i = loop_starter; i<timestamp_vec.size(); i++) {
         if (pps_timestamp == timestamp_vec[i]) {
@@ -571,12 +606,12 @@ void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detect
                 max_idx = i;
             }
         }
+        // CARE MAKE SUR THE
+        // Position are given with respect to the centre of the detector
+        // Centroid method is used
         position[0] = 0.;
         position[1] = 0.;
         position[2] = 0.;
-        Double_t xoffset = 0.;
-        Double_t yoffset = 0.;
-        Double_t zoffset = 0.;
         uint32_t adcsum = 0;
 //        std::cout << "A tester !!!" << std::endl;
         for (int64_t iidx : {geometry.at(max_idx).first - 1, geometry.at(max_idx).first + 1}) {
@@ -588,9 +623,13 @@ void FindPosition(uint16_t *adc_channels, Double_t *position, std::string detect
                 }
             }
         }
-        position[0] = position[0] / static_cast<Double_t>(adcsum);
+        // Applying the offset (position of the detector in the instrument) and dividing by adcsum for the ceintroid
+        Double_t xoffset = 0.;
+        Double_t yoffset = 0.;
+        Double_t zoffset = 0.;
+        position[0] = xoffset + position[0] / static_cast<Double_t>(adcsum);
         position[1] = yoffset + 0.5;
-        position[2] = position[2] / static_cast<Double_t>(adcsum) + zoffset;
+        position[2] = zoffset + position[2] / static_cast<Double_t>(adcsum);
     } else if (detector == "dssd") {
         position[0] = 0.;
         position[1] = 0.;
@@ -1129,7 +1168,7 @@ void CorrectTimesCEA(const std::string &init_tree_name, const std::string &final
     file_final->Close();
 }
 
-void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string &final_tree_name, std::string detector, uint32_t &abs_gps_time_ref) {
+void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string &final_tree_name, std::string detector, int32_t &abs_gps_time_ref) {
     //
     // Function used to correct the align the timestamp with a common time origin
     //
@@ -1171,7 +1210,7 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
 
     // Opening new root tree according to the detector
     if (detector == "maud") {
-        file_exists(final_tree_name);
+//        file_exists(final_tree_name);
         file_final = new TFile(final_tree_name.c_str(), "RECREATE", "Abs time root file for Maud");
         if (!file_final || file_final->IsZombie()) {
             std::cerr << "Error opening file!" << std::endl;
@@ -1179,7 +1218,7 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
         }
         tree_final = new TTree("Events", "Absolute time Maud tree");
     } else if (detector == "dssd") {
-        file_exists(final_tree_name);
+//        file_exists(final_tree_name);
         file_final = new TFile(final_tree_name.c_str(), "RECREATE", "Abs time root file for DSSD");
         if (!file_final || file_final->IsZombie()) {
             std::cerr << "Error opening file!" << std::endl;
@@ -1192,13 +1231,13 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
 
     // Variables to create the new tree + linking them to the tree
     uint32_t ts_init_noabs;
-    uint32_t pps_cpt_init_noabs;
-    uint32_t pps_cpt_corr_noabs;
-    uint32_t gps_corr_noabs;
+    int32_t pps_cpt_init_noabs;
+    int32_t pps_cpt_corr_noabs;
+    int32_t gps_corr_noabs;
     uint32_t ts_corr_abs;
-    uint32_t pps_cpt_corr_abs;
-    uint32_t pps_cpt_nocorr_abs;
-    uint32_t gps_corr_abs;
+    int32_t pps_cpt_corr_abs;
+    int32_t pps_cpt_nocorr_abs;
+    int32_t gps_corr_abs;
     Double_t time_corr_abs;
     Double_t energy_adc_final;
     uint16_t adc_channels_final[64];
@@ -1208,13 +1247,13 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
     int8_t det_id;
 
     tree_final->Branch("ts_init", &ts_init_noabs, "ts_init/i");
-    tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/i");
-    tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/i");
-    tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/i");
+    tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/I");
+    tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/I");
+    tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/I");
     tree_final->Branch("ts_corr_abs", &ts_corr_abs, "ts_corr_abs/i");
-    tree_final->Branch("pps_cpt_corr_abs", &pps_cpt_corr_abs, "pps_cpt_corr_abs/i");
-    tree_final->Branch("pps_cpt_init_abs", &pps_cpt_nocorr_abs, "pps_cpt_init_abs/i");
-    tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/i");
+    tree_final->Branch("pps_cpt_corr_abs", &pps_cpt_corr_abs, "pps_cpt_corr_abs/I");
+    tree_final->Branch("pps_cpt_init_abs", &pps_cpt_nocorr_abs, "pps_cpt_init_abs/I");
+    tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/I");
     tree_final->Branch("time_corr_abs", &time_corr_abs, "time_corr_abs/D");
     tree_final->Branch("energy_adc", &energy_adc_final, "energy_adc/D");
     tree_final->Branch("adc_channels", &adc_channels_final, "adc_channels[64]/s");
@@ -1224,34 +1263,57 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
     tree_final->Branch("det_id", &det_id, "det_id/b");
 
 
-//    Finds the first entry where the absolute time gps is 97252 (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
+//    Finds the first entry where the time gps is 1719176452 (97252 in absolute timestamp) (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
 //    This correction can also be done using the pps_cpt_corr at the first value of 78721 and for pps_cpt_init at the value 78699
 //    --  These values of pps were obtained using the GPS time, to adapt this function to the cea case where there is no GPS timestamp
-    uint32_t ref = 97252;
+    int32_t ref1 = 1719176452;
+    int32_t ref2 = 1719068039;
     uint32_t inc_index = tree_init->GetEntries();
+    uint32_t inc_index2 = 0;
     for (uint32_t i=0; i<tree_init->GetEntries(); i++) {
         tree_init->GetEntry(i);
-        if (gps_corr - abs_gps_time_ref == ref){
-            std::cout << "GPS absolute time of " << ref << " incremented at entry " << i << " - Returning this value." << std::endl;
-            std::cout << "Absolute time chosen for aligning PPS and GPS : " << gps_corr - abs_gps_time_ref << std::endl;
+        if (gps_corr == ref1) {
+            std::cout << "GPS absolute time of " << ref1 << " incremented at entry " << i << " - Returning this value." << std::endl;
+            std::cout << "Absolute time chosen for aligning PPS and GPS : " << gps_corr << std::endl;
             inc_index = i;
             break;
-            }
+        }
     }
     if (inc_index == tree_init->GetEntries()){
         std::cerr << "ERROR : No entry found for the searched GPS absolute time." << std::endl;
     }
 
     tree_init->GetEntry(inc_index);
-    uint32_t abs_pps_time_ref = pps_cpt_corr - gps_corr + abs_gps_time_ref;
+    int32_t abs_pps_time_ref = static_cast<int32_t>(pps_cpt_corr) - gps_corr + abs_gps_time_ref;
+    int32_t abs_pps_time_ref2 = 0;
     std::cout << "      Time correction applied to PSS  :  " << abs_pps_time_ref << "      Corresponding entry index : " << inc_index << std::endl;
-    std::cout << "      Values of the PPS and GPS value  " << pps_cpt_corr - abs_pps_time_ref << "    " << gps_corr - abs_gps_time_ref << std::endl;
+    std::cout << "      Values of the PPS and GPS value  " << static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref << "    " << gps_corr - abs_gps_time_ref << std::endl;
 
-    std::vector<uint32_t> tstemp_vec;
+    if (detector == "maud") {
+        for (uint32_t i=0; i<tree_init->GetEntries(); i++) {
+            tree_init->GetEntry(i);
+            if (gps_corr == ref2) {
+                std::cout << "Additional correction value for the first part of the maud data during the ascent phase" << std::endl;
+                std::cout << "GPS absolute time of " << ref2 << " incremented at entry " << i << " - Returning this value." << std::endl;
+                std::cout << "Absolute time chosen for aligning PPS and GPS : " << gps_corr << std::endl;
+                inc_index2 = i;
+                break;
+            }
+        }
+        if (inc_index2 == tree_init->GetEntries()){
+            std::cerr << "ERROR : No entry found for the SECOND searched GPS absolute time." << std::endl;
+        }
+        tree_init->GetEntry(inc_index2);
+        abs_pps_time_ref2 = static_cast<int32_t>(pps_cpt_corr) - gps_corr + abs_gps_time_ref;
+        std::cout << "      Time correction applied to first PSS  :  " << abs_pps_time_ref2 << "      Corresponding entry index : " << inc_index2 << std::endl;
+        std::cout << "      Values of the PPS and GPS value  " << static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref2 << "    " << gps_corr - abs_gps_time_ref << std::endl;
+    }
+
+    std::vector<int32_t> tstemp_vec;
     std::vector<Double_t> temperature_vec;
     uint64_t temp_vec_init_idx = 0;
 
-    std::vector<uint32_t> tscorr_vec;
+    std::vector<int32_t> tscorr_vec;
     std::vector<Double_t> correction_vec;
     uint64_t corr_vec_init_idx = 0;
     Double_t temp_corr;
@@ -1270,13 +1332,18 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
             tree_init->GetEntry(i);
 
             ts_init_noabs = ts_init;
-            pps_cpt_init_noabs = pps_cpt_init;
-            pps_cpt_corr_noabs = pps_cpt_corr;
-            gps_corr_noabs = gps_corr;
+            pps_cpt_init_noabs = static_cast<int32_t>(pps_cpt_init);
+            pps_cpt_corr_noabs = static_cast<int32_t>(pps_cpt_corr);
+            gps_corr_noabs = static_cast<int32_t>(gps_corr);
             ts_corr_abs = ts_corr;
-            pps_cpt_corr_abs = pps_cpt_corr - abs_pps_time_ref;
-            pps_cpt_nocorr_abs = pps_cpt_init - abs_pps_time_ref;
-            gps_corr_abs = gps_corr - abs_gps_time_ref;
+            if (i < 3318949) {
+                pps_cpt_corr_abs = static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref2;
+                pps_cpt_nocorr_abs = static_cast<int32_t>(pps_cpt_init) - abs_pps_time_ref2;
+            } else {
+                pps_cpt_corr_abs = static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref;
+                pps_cpt_nocorr_abs = static_cast<int32_t>(pps_cpt_init) - abs_pps_time_ref;
+            }
+            gps_corr_abs = static_cast<int32_t>(gps_corr) - abs_gps_time_ref;
             time_corr_abs = pps_cpt_corr_abs + ts_corr_abs/40.e6;
             energy_adc_final = energy_adc_init;
             for (uint64_t i = 0; i<64; i++){
@@ -1286,10 +1353,23 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
             position_final[1] = position_init[1];
             position_final[2] = position_init[2];
 
+            // Calibration with temperature only
 //            FindTemperature(pps_cpt_corr_abs, temp_final, temp_vec_init_idx, tstemp_vec, temperature_vec);
-            FindCorrection(pps_cpt_corr_abs, temp_corr, corr_vec_init_idx, tscorr_vec, correction_vec);
-            temp_final = 0.;
 //            temp_corr = 1.;
+            // Temperature is set to 0 as there is no use for it in the calibration, so it is not considered to shift the calibration
+//            temp_final = 0.;
+//            temp_corr = 1.;
+            // Calibration with temperature below 19250 and temp corr by fitting over 19250
+            // Correction to compensate the effect of temperature that is not uniform
+            // A first run is made set to one, to estimate the value of the correction, then the correction is set using the correction file.
+            if (pps_cpt_corr_abs < 19250) {
+                FindTemperature(pps_cpt_corr_abs, temp_final, temp_vec_init_idx, tstemp_vec, temperature_vec);
+                temp_corr = 1.;
+            } else {
+                temp_final = 0.;
+                FindCorrection(pps_cpt_corr_abs, temp_corr, corr_vec_init_idx, tscorr_vec, correction_vec);
+            }
+
             energy_final = ADCtoEnergyMaud(energy_adc_init, temp_final, temp_corr);
             det_id = 7;
 
@@ -1304,23 +1384,24 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
         ExtractDSSDCoefs(coeffs, dssd_p_coefs_filename, dssd_n_coefs_filename);
 
         Double_t adc_channels_calib[64];
-        Double_t adc_channels_corr[64];
-        Double_t adc_channels_init_double[64];
+        Double_t adc_channels_calib_corr[64];
+//        Double_t adc_channels_init_double[64];
         tree_final->Branch("adc_channels_calib", &adc_channels_calib, "adc_channels_calib[64]/D");
-        tree_final->Branch("adc_channels_corr", &adc_channels_corr, "adc_channels_corr[64]/D");
+//        tree_final->Branch("adc_channels_cali_corr", &adc_channels_corr, "adc_channels_cali_corr[64]/D");
+        tree_final->Branch("adc_channels_calib_corr", &adc_channels_calib_corr, "adc_channels_calib_corr[64]/D");
 
         uint64_t nentries = tree_init->GetEntries();
         for (uint64_t i = 0; i<nentries; i++) {
             tree_init->GetEntry(i);
 
             ts_init_noabs = ts_init;
-            pps_cpt_init_noabs = pps_cpt_init;
-            pps_cpt_corr_noabs = pps_cpt_corr;
-            gps_corr_noabs = gps_corr;
+            pps_cpt_init_noabs = static_cast<int32_t>(pps_cpt_init);
+            pps_cpt_corr_noabs = static_cast<int32_t>(pps_cpt_corr);
+            gps_corr_noabs = static_cast<int32_t>(gps_corr);
             ts_corr_abs = ts_corr;
-            pps_cpt_corr_abs = pps_cpt_corr - abs_pps_time_ref;
-            pps_cpt_nocorr_abs = pps_cpt_init - abs_pps_time_ref;
-            gps_corr_abs = gps_corr - abs_gps_time_ref;
+            pps_cpt_corr_abs = static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref;
+            pps_cpt_nocorr_abs = static_cast<int32_t>(pps_cpt_init) - abs_pps_time_ref;
+            gps_corr_abs = static_cast<int32_t>(gps_corr) - abs_gps_time_ref;
             time_corr_abs = pps_cpt_corr_abs + ts_corr_abs/40.e6;
             energy_adc_final = energy_adc_init;
             for (uint64_t i = 0; i<64; i++){
@@ -1332,9 +1413,9 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
 
             FindTemperature(pps_cpt_corr_abs, temp_final, temp_vec_init_idx, tstemp_vec, temperature_vec);
 //            temp_final = 0.;
-            ADCTempCorrectionDSSD(adc_channels_init, adc_channels_corr, temp_final);
+//            ADCTempCorrectionDSSD(adc_channels_init, adc_channels_corr, temp_final);
             // This line for applying the temperature shift before calibration
-            energy_final = ADCtoEnergyDSSD(adc_channels_corr, adc_channels_calib, 25, coeffs); //!! c'est comme si c'était à 25°
+            energy_final = ADCtoEnergyDSSD(adc_channels_init, adc_channels_calib, adc_channels_calib_corr, temp_final, coeffs); //!! c'est comme si c'était à 25°
             // This line for applying the calibration to raw channels
 //            for (uint64_t i = 0; i<64; i++){
 //                adc_channels_init_double[i] = static_cast<Double_t>(adc_channels_init[i]);
@@ -1352,7 +1433,7 @@ void ChangeTimeOriginIJCLAB(const std::string &init_tree_name, const std::string
     file_final->Close();
 }
 
-void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &final_tree_name, uint32_t &abs_pps_time_ref) {
+void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &final_tree_name, int32_t &abs_pps_time_ref) {
     //
     // Function used to correct the align the timestamp with a common time origin
     //
@@ -1401,13 +1482,13 @@ void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &f
 
     // Variables to create the new tree + linking them to the tree
     uint32_t ts_init_noabs;
-    uint32_t pps_cpt_init_noabs;
-    uint32_t pps_cpt_corr_noabs;
-    uint32_t gps_corr_noabs;
+    int32_t pps_cpt_init_noabs;
+    int32_t pps_cpt_corr_noabs;
+    int32_t gps_corr_noabs;
     uint32_t ts_corr_abs;
-    uint32_t pps_cpt_corr_abs;
-    uint32_t pps_cpt_nocorr_abs;
-    uint32_t gps_corr_abs;
+    int32_t pps_cpt_corr_abs;
+    int32_t pps_cpt_nocorr_abs;
+    int32_t gps_corr_abs;
     Double_t time_corr_abs;
     Double_t energy_adc_final;
     uint16_t adc_channels_final[64];
@@ -1418,16 +1499,16 @@ void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &f
 
     Double_t adc_channels_calib[64];
     Double_t adc_channels_corr[64];
-    Double_t adc_channels_init_double[64];
+//    Double_t adc_channels_init_double[64];
 
     tree_final->Branch("ts_init", &ts_init_noabs, "ts_init/i");
-    tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/i");
-    tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/i");
-    tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/i");
+    tree_final->Branch("pps_cpt_init", &pps_cpt_init_noabs, "pps_cpt_init/I");
+    tree_final->Branch("pps_cpt_corr", &pps_cpt_corr_noabs, "pps_cpt_corr/I");
+    tree_final->Branch("gps_corr", &gps_corr_noabs, "gps_corr/I");
     tree_final->Branch("ts_corr_abs", &ts_corr_abs, "ts_corr_abs/i");
-    tree_final->Branch("pps_cpt_corr_abs", &pps_cpt_corr_abs, "pps_cpt_corr_abs/i");
-    tree_final->Branch("pps_cpt_init_abs", &pps_cpt_nocorr_abs, "pps_cpt_init_abs/i");
-    tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/i");
+    tree_final->Branch("pps_cpt_corr_abs", &pps_cpt_corr_abs, "pps_cpt_corr_abs/I");
+    tree_final->Branch("pps_cpt_init_abs", &pps_cpt_nocorr_abs, "pps_cpt_init_abs/I");
+    tree_final->Branch("gps_corr_abs", &gps_corr_abs, "gps_corr_abs/I");
     tree_final->Branch("time_corr_abs", &time_corr_abs, "time_corr_abs/D");
     tree_final->Branch("energy_adc", &energy_adc_final, "energy_adc/D");
     tree_final->Branch("adc_channels", &adc_channels_final, "adc_channels[64]/s");
@@ -1480,12 +1561,12 @@ void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &f
         tree_init->GetEntry(i);
 
         ts_init_noabs = ts_init;
-        pps_cpt_init_noabs = pps_cpt_init;
-        pps_cpt_corr_noabs = pps_cpt_corr;
-        gps_corr_noabs = gps_corr;
+        pps_cpt_init_noabs = static_cast<int32_t>(pps_cpt_init);
+        pps_cpt_corr_noabs = static_cast<int32_t>(pps_cpt_corr);
+        gps_corr_noabs = static_cast<int32_t>(gps_corr);
         ts_corr_abs = ts_corr;
-        pps_cpt_corr_abs = pps_cpt_corr - abs_pps_time_ref;
-        pps_cpt_nocorr_abs = pps_cpt_init - abs_pps_time_ref;
+        pps_cpt_corr_abs = static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref;
+        pps_cpt_nocorr_abs = static_cast<int32_t>(pps_cpt_init) - abs_pps_time_ref;
         gps_corr_abs = pps_cpt_corr_abs;
         time_corr_abs = pps_cpt_corr_abs + ts_corr_abs/40.e6;
         energy_adc_final = energy_adc_init;
@@ -1500,7 +1581,7 @@ void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &f
         temp_final = 0.;
         ADCTempCorrectionCEA(adc_channels_init, adc_channels_corr, temp_final);
         // This line for applying the temperature shift before calibration
-        energy_final = ADCtoEnergyCEA(adc_channels_corr, adc_channels_calib, 25, coeffs); //!! c'est comme si c'était à 25°
+        energy_final = ADCtoEnergyCEA(adc_channels_init, adc_channels_calib, 25, coeffs); //!! c'est comme si c'était à 25°
         // This line for applying the calibration to raw channels
 //            for (uint64_t i = 0; i<64; i++){
 //                adc_channels_init_double[i] = static_cast<Double_t>(adc_channels_init[i]);
@@ -1514,7 +1595,7 @@ void ChangeTimeOriginCEA(const std::string &init_tree_name, const std::string &f
     file_final->Close();
 }
 
-void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &final_tree_name, std::string detector, uint32_t &abs_gps_time_ref) {
+void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &final_tree_name, std::string detector, int32_t &abs_gps_time_ref) {
     //
     // Function used to correct the align the timestamp with a common time origin
     //
@@ -1604,14 +1685,14 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
     tree_final->Branch("energy", &energy_final, "energy/D");
     tree_final->Branch("position", &position_final, "position[3]/D");
 
-//    Finds the first entry where the absolute time gps is 97252 (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
-    int32_t ref = 97252;
+    //    Finds the first entry where the time gps is 1719176452 (97252 in absolute timestamp) (number of second at 23rd june 23:00:52 with origin being 22nd june 20:00:00) return this entry
+    int32_t ref = 1719176452;
     uint32_t inc_index = tree_init->GetEntries();
     for (uint32_t i=0; i<tree_init->GetEntries(); i++) {
         tree_init->GetEntry(i);
-        if (gps_corr - static_cast<int32_t>(abs_gps_time_ref) == ref){
+        if (gps_corr == ref){
             std::cout << "GPS absolute time of " << ref << " incremented at entry " << i << " - Returning this value." << std::endl;
-            std::cout << "Absolute time chosen for aligning PPS and GPS : " << gps_corr - static_cast<int32_t>(abs_gps_time_ref) << std::endl;
+            std::cout << "Absolute time chosen for aligning PPS and GPS : " << gps_corr << std::endl;
             inc_index = i;
             break;
             }
@@ -1621,9 +1702,9 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
     }
 
     tree_init->GetEntry(inc_index);
-    int32_t abs_pps_time_ref = static_cast<int32_t>(pps_cpt_corr) - gps_corr + static_cast<int32_t>(abs_gps_time_ref);
+    int32_t abs_pps_time_ref = static_cast<int32_t>(pps_cpt_corr) - gps_corr + abs_gps_time_ref;
     std::cout << "      Time correction applied to PSS  :  " << abs_pps_time_ref << "      Corresponding entry index : " << inc_index << std::endl;
-    std::cout << "      Values of the PPS and GPS value  " << static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref << "    " << gps_corr - static_cast<int32_t>(abs_gps_time_ref) << std::endl;
+    std::cout << "      Values of the PPS and GPS value  " << static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref << "    " << gps_corr - abs_gps_time_ref << std::endl;
 
     uint64_t nentries = tree_init->GetEntries();
     for (uint64_t i = 0; i<nentries; i++) {
@@ -1634,7 +1715,7 @@ void ChangeTimeOriginUCD(const std::string &init_tree_name, const std::string &f
         gps_corr_noabs = gps_corr;
         pps_cpt_corr_abs = static_cast<int32_t>(pps_cpt_corr) - abs_pps_time_ref;
         pps_cpt_nocorr_abs = pps_cpt_init - abs_pps_time_ref;
-        gps_corr_abs = gps_corr - static_cast<int32_t>(abs_gps_time_ref);
+        gps_corr_abs = gps_corr - abs_gps_time_ref;
         time_corr_abs = time_corr;
         energy_final = energy_init;
         GetUCDPosition(position_final, position_init);
@@ -2909,7 +2990,7 @@ void MakeWholeDataTree(const std::string &fname_final_tree, const std::string &f
     }
 }
 
-void FindCoincidences(const std::string &tree_name_a, const std::string &tree_name_b, std::vector<uint64_t> &idx_tree_a, std::vector<uint64_t> &idx_tree_b, std::vector<Double_t> &coinc_delays, const Double_t window_delay, const bool display, std::vector<TCanvas*> &save_canvas) {
+void FindCoincidences(const std::string &tree_name_a, const std::string &tree_name_b, std::vector<uint64_t> &idx_tree_a, std::vector<uint64_t> &idx_tree_b, std::vector<Double_t> &coinc_delays, const Double_t window_delay, const bool display, std::vector<TCanvas*> &save_canvas, const std::string &comment) {
     // Open the 2 trees and link the branches
     auto file_a = new TFile(tree_name_a.c_str());
     if (!file_a || file_a->IsZombie()) {
@@ -2965,9 +3046,10 @@ void FindCoincidences(const std::string &tree_name_a, const std::string &tree_na
         }
     }
     std::cout << "  Number of coincidences for a window of " << window_delay << " s is : " << coinc_counter_delay << std::endl;
-
+    std::cout << "    Over a total of " << nentry_a << " events (" << coinc_counter_delay / nentry_a * 100 << "%) - " << tree_name_a << std::endl;
+    std::cout << "    Over a total of " << nentry_b << " events (" << coinc_counter_delay / nentry_b * 100 << "%) - " << tree_name_b << std::endl;
     if (display) {
-        auto can5 = new TCanvas((std::string("can-") + tree_name_a + std::string("-") + tree_name_b).c_str(), (std::string("Coinc delay histogram ") + tree_name_a + std::string(" - ") + tree_name_b).c_str());
+        auto can5 = new TCanvas((std::string("can-") + comment).c_str(), (std::string("Coinc delay histogram ") + comment).c_str(), 900, 600);
         int bin_num = window_delay / 2 / 2e-8;
         std::vector<double> weights(coinc_delays.size(),1);
         std::cout << "n bins : " << bin_num << std::endl;
@@ -2975,12 +3057,20 @@ void FindCoincidences(const std::string &tree_name_a, const std::string &tree_na
 
         can5->SetLogy();
         can5->cd(1);
-        auto h11 = new TH1D((std::string("hist-") + tree_name_a + std::string("-") + tree_name_b).c_str(), (std::string("Coinc delay histogram ") + tree_name_a + std::string(" - ") + tree_name_b).c_str(), bin_num, -window_delay / 2,  window_delay / 2);
+        auto h11 = new TH1D((std::string("hist-") + comment + std::string("-delays")).c_str(), (std::string("Coinc delay histogram ") + comment).c_str(), bin_num, -window_delay / 2,  window_delay / 2);
         h11->FillN(coinc_delays.size(), coinc_delays.data(), weights.data());
+        h11->GetXaxis()->SetTitleSize(0.045);
+        h11->GetYaxis()->SetTitleSize(0.045);
+        h11->GetXaxis()->SetLabelSize(0.04);
+        h11->GetYaxis()->SetLabelSize(0.04);
+        h11->GetXaxis()->SetTitle((std::string("Delay time ") + comment + std::string(" (s)")).c_str());
+        h11->GetYaxis()->SetTitle("Number of coincidences");
+        h11->SetTitle("");
         h11->Draw();
 
         can5->Update();
         save_canvas.push_back(can5);
+        can5->SaveAs((std::string("/home/nathan/Desktop/GRB_polarimetry/Thesis/reports_kiruna/results/coinc/hist-") + comment + std::string(".png")).c_str());
     }
 }
 
@@ -3085,7 +3175,7 @@ void DisplayDSSDChannels(const std::string &tree_name) {
 //    auto can_time_temp = new TCanvas("time_vs_temp", "Time vs temperature");
 //    tree_hist->Draw("temperature:time_corr_abs");
 
-    bool show_fit_bulk = true;
+    bool show_fit_bulk = false;
     bool show_fit_peak = false;
     Double_t fitxmin2 = 450;
     Double_t fitxmax2 = 700;
@@ -3137,6 +3227,7 @@ void DisplayDSSDChannels(const std::string &tree_name) {
         }
     }
 
+    // Filling histograms
     for (uint64_t i = 0; i < nentries; ++i) {
         tree_hist->GetEntry(i);
         if (temperature >= 10) {
@@ -3178,8 +3269,12 @@ void DisplayDSSDChannels(const std::string &tree_name) {
         }
     }
 
+    // Colors for different energy ranges
     int colors[6] = {kRed, kBlue, kGreen+2, kMagenta, kOrange, kCyan};
 
+    // ============================================================================
+    // Calibrated spectra
+    // ============================================================================
     auto can_n_calib_timed = new TCanvas("Spectra_calibrated_n_timed", "Spectra calibrated");
 
     // Legend area
@@ -3191,18 +3286,18 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     std::vector<TLegend*> legend_calib(3);
     pad_legend_calib->cd(1);
     legend_calib[0] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_calib[0]->AddEntry(spectra_calib_timed[0][0], "n channels >= 10 degrees C", "l");
-    legend_calib[0]->AddEntry(spectra_calib_timed[1][0], "n channels 10 - 5 degrees C", "l");
+    legend_calib[0]->AddEntry(spectra_calib_timed[0][0], "n channels >= 10#circC", "l");
+    legend_calib[0]->AddEntry(spectra_calib_timed[1][0], "n channels 10 - 5#circC", "l");
     legend_calib[0]->Draw();
     pad_legend_calib->cd(2);
     legend_calib[1] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_calib[1]->AddEntry(spectra_calib_timed[2][0], "n channels 5 - 0 degrees C", "l");
-    legend_calib[1]->AddEntry(spectra_calib_timed[3][0], "n channels 0 - -5 degrees C", "l");
+    legend_calib[1]->AddEntry(spectra_calib_timed[2][0], "n channels 5 - 0#circC", "l");
+    legend_calib[1]->AddEntry(spectra_calib_timed[3][0], "n channels 0 - -5#circC", "l");
     legend_calib[1]->Draw();
     pad_legend_calib->cd(3);
     legend_calib[2] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_calib[2]->AddEntry(spectra_calib_timed[4][0], "n channels -5 - -10 degrees C", "l");
-    legend_calib[2]->AddEntry(spectra_calib_timed[5][0], "n channels < -10 degrees C", "l");
+    legend_calib[2]->AddEntry(spectra_calib_timed[4][0], "n channels -5 - -10#circC", "l");
+    legend_calib[2]->AddEntry(spectra_calib_timed[5][0], "n channels < -10#circC", "l");
     legend_calib[2]->Draw();
 
     // Histograms area
@@ -3212,6 +3307,7 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     pad_hist_calib->cd();
     pad_hist_calib->Divide(8, 4, 0.001, 0.001);
 
+    // Drawing the different spectra on different pads
     for (size_t i=0; i<6; i++) {
         for (size_t j=0; j<32; j++) {
             pad_hist_calib->cd(j + 1);
@@ -3230,6 +3326,9 @@ void DisplayDSSDChannels(const std::string &tree_name) {
 
     can_n_calib_timed->Update();
 
+    // ============================================================================
+    // Raw spectra
+    // ============================================================================
     auto can_n_raw_timed = new TCanvas("Spectra_raw_n_timed", "Raw spectra");
 
     // Legend area
@@ -3241,18 +3340,18 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     std::vector<TLegend*> legend_raw(3);
     pad_legend_raw->cd(1);
     legend_raw[0] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_raw[0]->AddEntry(spectra_raw_timed[0][0], "n channels >= 10 degrees C", "l");
-    legend_raw[0]->AddEntry(spectra_raw_timed[1][0], "n channels 10 - 5 degrees C", "l");
+    legend_raw[0]->AddEntry(spectra_raw_timed[0][0], "n channels >= 10#circC", "l");
+    legend_raw[0]->AddEntry(spectra_raw_timed[1][0], "n channels 10 - 5#circC", "l");
     legend_raw[0]->Draw();
     pad_legend_raw->cd(2);
     legend_raw[1] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_raw[1]->AddEntry(spectra_raw_timed[2][0], "n channels 5 - 0 degrees C", "l");
-    legend_raw[1]->AddEntry(spectra_raw_timed[3][0], "n channels 0 - -5 degrees C", "l");
+    legend_raw[1]->AddEntry(spectra_raw_timed[2][0], "n channels 5 - 0#circC", "l");
+    legend_raw[1]->AddEntry(spectra_raw_timed[3][0], "n channels 0 - -5#circC", "l");
     legend_raw[1]->Draw();
     pad_legend_raw->cd(3);
     legend_raw[2] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_raw[2]->AddEntry(spectra_raw_timed[4][0], "n channels -5 - -10 degrees C", "l");
-    legend_raw[2]->AddEntry(spectra_raw_timed[5][0], "n channels < -10 degrees C", "l");
+    legend_raw[2]->AddEntry(spectra_raw_timed[4][0], "n channels -5 - -10#circC", "l");
+    legend_raw[2]->AddEntry(spectra_raw_timed[5][0], "n channels < -10#circC", "l");
     legend_raw[2]->Draw();
 
     // Histograms area
@@ -3262,6 +3361,7 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     pad_hist_raw->cd();
     pad_hist_raw->Divide(8, 4, 0.001, 0.001);
 
+    // Drawing the different spectra on different pads
     for (size_t i=0; i<6; i++) {
         for (size_t j=0; j<32; j++) {
             pad_hist_raw->cd(j + 1);
@@ -3299,7 +3399,9 @@ void DisplayDSSDChannels(const std::string &tree_name) {
 
     can_n_raw_timed->Update();
 
-
+    // ============================================================================
+    // Raw corrected spectra
+    // ============================================================================
     auto can_n_corr_timed = new TCanvas("Spectra_corr_n_timed", "Raw corr spectra");
 
     // Legend area
@@ -3311,18 +3413,18 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     std::vector<TLegend*> legend_corr(3);
     pad_legend_corr->cd(1);
     legend_corr[0] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_corr[0]->AddEntry(spectra_corr_timed[0][0], "n channels >= 10 degrees C", "l");
-    legend_corr[0]->AddEntry(spectra_corr_timed[1][0], "n channels 10 - 5 degrees C", "l");
+    legend_corr[0]->AddEntry(spectra_corr_timed[0][0], "n channels >= 10#circC", "l");
+    legend_corr[0]->AddEntry(spectra_corr_timed[1][0], "n channels 10 - 5#circC", "l");
     legend_corr[0]->Draw();
     pad_legend_corr->cd(2);
     legend_corr[1] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_corr[1]->AddEntry(spectra_corr_timed[2][0], "n channels 5 - 0 degrees C", "l");
-    legend_corr[1]->AddEntry(spectra_corr_timed[3][0], "n channels 0 - -5 degrees C", "l");
+    legend_corr[1]->AddEntry(spectra_corr_timed[2][0], "n channels 5 - 0#circC", "l");
+    legend_corr[1]->AddEntry(spectra_corr_timed[3][0], "n channels 0 - -5#circC", "l");
     legend_corr[1]->Draw();
     pad_legend_corr->cd(3);
     legend_corr[2] = new TLegend(0.1, 0.1, 0.9, 0.9);
-    legend_corr[2]->AddEntry(spectra_corr_timed[4][0], "n channels -5 - -10 degrees C", "l");
-    legend_corr[2]->AddEntry(spectra_corr_timed[5][0], "n channels < -10 degrees C", "l");
+    legend_corr[2]->AddEntry(spectra_corr_timed[4][0], "n channels -5 - -10#circC", "l");
+    legend_corr[2]->AddEntry(spectra_corr_timed[5][0], "n channels < -10#circC", "l");
     legend_corr[2]->Draw();
 
     // Histograms area
@@ -3332,6 +3434,7 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     pad_hist_corr->cd();
     pad_hist_corr->Divide(8, 4, 0.001, 0.001);
 
+    // Drawing the different spectra on different pads
     for (size_t i=0; i<6; i++) {
         for (size_t j=0; j<32; j++) {
             pad_hist_corr->cd(j + 1);
@@ -3491,6 +3594,134 @@ void DisplayDSSDChannels(const std::string &tree_name) {
     }
 
 
+    // ============================================================================
+    // For the manuscript !
+    // ============================================================================
+    // ============================================================================
+    // Calibrated spectra
+    // ============================================================================
+    auto can_chan13_calib = new TCanvas("Spectra_chan13_calibrated", "Spectra 13 calibrated", 900, 600);
+
+    // Legend area
+    TPad *pad_legend_calib_13 = new TPad("pad_legend_calib", "Legend Pad", 0, 0.9, 1, 1);
+    pad_legend_calib_13->SetFillColor(0);
+    pad_legend_calib_13->Draw();
+    pad_legend_calib_13->cd();
+    pad_legend_calib_13->Divide(3, 1);
+    pad_legend_calib_13->cd(1);
+    legend_calib[0]->SetTextSize(0.33);
+    legend_calib[0]->Draw();
+    pad_legend_calib_13->cd(2);
+    legend_calib[1]->SetTextSize(0.33);
+    legend_calib[1]->Draw();
+    pad_legend_calib_13->cd(3);
+    legend_calib[2]->SetTextSize(0.33);
+    legend_calib[2]->Draw();
+
+    // Histograms area
+    can_chan13_calib->cd();
+    TPad *pad_hist13_calib = new TPad("pad_hist13_calib", "Histogram 13 pad", 0, 0, 1, 0.9);
+    pad_hist13_calib->Draw();
+    pad_hist13_calib->cd();
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        spectra_calib_timed[i][13]->SetStats(0);
+        spectra_calib_timed[i][13]->GetXaxis()->SetRangeUser(xlimmincalib, xlimmaxcalib);
+        spectra_calib_timed[i][13]->SetLineColor(colors[i]);
+        spectra_calib_timed[i][13]->GetXaxis()->SetTitleSize(0.045);
+        spectra_calib_timed[i][13]->GetYaxis()->SetTitleSize(0.045);
+        spectra_calib_timed[i][13]->GetXaxis()->SetLabelSize(0.04);
+        spectra_calib_timed[i][13]->GetYaxis()->SetLabelSize(0.04);
+        spectra_calib_timed[i][13]->GetXaxis()->SetTitle("Energy (keV)");
+        spectra_calib_timed[i][13]->GetYaxis()->SetTitle("Number of events");
+        spectra_calib_timed[i][13]->SetTitle("");
+        gPad->SetTopMargin(0.05);
+//            spectra_calib_timed[i][13]->Fit((std::string("gauss_fit_timed1") + std::to_string(i)).c_str(), "", "", fitxmin2, fitxmax2);
+        if (i == 0) {
+            spectra_calib_timed[i][13]->Draw();
+        } else {
+            spectra_calib_timed[i][13]->DrawCopy("same");
+        }
+        gPad->SetLogy();
+    }
+
+    can_chan13_calib->Update();
+
+    // ============================================================================
+    // Raw spectra
+    // ============================================================================
+    auto can_chan13_raw = new TCanvas("Spectra_chan13_raw", "Raw spectra chan13", 900, 600);
+
+    // Legend area
+    TPad *pad_legend_raw_13 = new TPad("pad_legend_raw13", "Legend Pad13", 0, 0.9, 1, 1);
+    pad_legend_raw_13->SetFillColor(0);
+    pad_legend_raw_13->Draw();
+    pad_legend_raw_13->cd();
+    pad_legend_raw_13->Divide(3, 1);
+    pad_legend_raw_13->cd(1);
+    legend_raw[0]->SetTextSize(0.33);
+    legend_raw[0]->Draw();
+    pad_legend_raw_13->cd(2);
+    legend_raw[1]->SetTextSize(0.33);
+    legend_raw[1]->Draw();
+    pad_legend_raw_13->cd(3);
+    legend_raw[2]->SetTextSize(0.33);
+    legend_raw[2]->Draw();
+
+    // Histograms area
+    can_chan13_raw->cd();
+    TPad *pad_hist13_raw = new TPad("pad_hist13_raw", "Histogram 13 pad", 0, 0, 1, 0.9);
+    pad_hist13_raw->Draw();
+    pad_hist13_raw->cd();
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        spectra_raw_timed[i][13]->SetStats(0);
+        spectra_raw_timed[i][13]->SetLineColor(colors[i]);
+        spectra_raw_timed[i][13]->GetXaxis()->SetTitleSize(0.045);
+        spectra_raw_timed[i][13]->GetYaxis()->SetTitleSize(0.045);
+        spectra_raw_timed[i][13]->GetXaxis()->SetLabelSize(0.04);
+        spectra_raw_timed[i][13]->GetYaxis()->SetLabelSize(0.04);
+        spectra_raw_timed[i][13]->GetXaxis()->SetTitle("Energy (ADC)");
+        spectra_raw_timed[i][13]->GetYaxis()->SetTitle("Number of events");
+        spectra_raw_timed[i][13]->SetTitle("");
+        gPad->SetTopMargin(0.05);
+        if (i == 0) {
+            spectra_raw_timed[i][13]->Draw();
+        } else {
+            spectra_raw_timed[i][13]->DrawCopy("same");
+        }
+        spectra_raw_timed[i][13]->Fit((std::string("gauss_fit") + std::to_string(i) + std::string("_13")).c_str(), "QNR+", "", fitminbulk[13], fitmaxbulk[13]);
+        spectra_raw_timed[i][13]->Fit((std::string("pedest_gauss_fit") + std::to_string(i) + std::string("_13")).c_str(), "QNR+", "", fitminpedest[13], fitmaxpedest[13]);
+        fit_bulk[i][13] = spec_raw_fit[i][13]->GetParameter(1);
+        fit_bulk_err[i][13] = spec_raw_fit[i][13]->GetParError(1);
+        fit_pedest[i][13] = spec_raw_fit_pedest[i][13]->GetParameter(1);
+        fit_pedest_err[i][13] = spec_raw_fit_pedest[i][13]->GetParError(1);
+
+//        if (show_fit_bulk || show_fit_peak) {
+    //        spec_raw_fit[i][13]->DrawCopy("same");
+    //        spec_raw_fit_pedest[i][13]->DrawCopy("same");
+//        }
+//        if (show_fit_peak) {
+//            spectra_raw_timed[i][13]->GetXaxis()->SetRangeUser(fitminpedest[13] - 50, fitmaxpedest[13] + 50);
+//        } else if (show_fit_bulk) {
+//            spectra_raw_timed[i][13]->GetXaxis()->SetRangeUser(fitminbulk[13] - 50, fitmaxbulk[13] + 50);
+//                spectra_raw_timed[i][13]->GetXaxis()->SetRangeUser(400, 800);
+//            spectra_raw_timed[i][13]->GetYaxis()->SetRangeUser(50, 1000);
+//        } else {
+//            spectra_raw_timed[i][13]->GetXaxis()->SetRangeUser(xlimmin, xlimmax);
+//        }
+
+        gPad->SetLogy();
+
+    }
+
+    can_chan13_raw->Update();
+
+
+
+
 
 ////  =============== 2D spectra ===============
 //    std::cout << "Filling 2D spectra" << std::endl;
@@ -3542,4 +3773,575 @@ void DisplayDSSDChannels(const std::string &tree_name) {
 
     DisplayApp.Run();
 
+}
+
+void DisplayDSSDChannels2(const std::string &tree_name) {
+    // Extraction of the root tree
+    file_exists(tree_name);
+    auto tree_file = new TFile(tree_name.c_str());
+    if (!tree_file || tree_file->IsZombie()) {
+        std::cerr << "Error while opening the file." << std::endl;
+    }
+    auto tree_hist = (TTree*) tree_file->Get("Events");
+
+    // Variables to read the initial tree
+    Double_t time_corr_abs;
+    uint16_t adc_channels[64];
+    Double_t adc_channels_calib[64];
+    Double_t adc_channels_calib_corr[64];
+    Double_t temperature;
+    tree_hist->SetBranchAddress("time_corr_abs",     &time_corr_abs);
+    tree_hist->SetBranchAddress("adc_channels",      &adc_channels);
+    tree_hist->SetBranchAddress("adc_channels_calib",      &adc_channels_calib);
+    tree_hist->SetBranchAddress("adc_channels_calib_corr",      &adc_channels_calib_corr);
+    tree_hist->SetBranchAddress("temperature", &temperature);
+
+    uint64_t nentries = tree_hist->GetEntries();
+    uint32_t init_time;
+    uint32_t end_time;
+    tree_hist->GetEntry(0);
+    init_time = static_cast<uint32_t>(time_corr_abs);
+    tree_hist->GetEntry(nentries - 1);
+    end_time = static_cast<uint32_t>(time_corr_abs + 1) ;
+
+
+    TApplication DisplayApp("App", nullptr, nullptr);
+
+    int xlimmin = 0;
+    int xlimmax = 1500;
+    int xlimmincalib = 0;
+    int xlimmaxcalib = 1500;
+
+//  =============== time vs temperature ===============
+//    auto can_time_temp = new TCanvas("time_vs_temp", "Time vs temperature");
+//    tree_hist->Draw("temperature:time_corr_abs");
+
+    bool show_fit_bump = false;
+    Double_t fitxmin2 = 450;
+    Double_t fitxmax2 = 700;
+
+    Double_t fit_bump_simple_min = 400;
+    Double_t fit_bump_simple_max = 800;
+    std::vector<Double_t> fitminbumpraw = {420, 460, 400, 400, 450, 430, 420, 420, 450, 430, 410, 420, 420, 440, 430, 440, 440, 420, 420, 420, 420, 420, 430, 430, 420, 410, 440, 430, 430, 420, 430, 440};
+    std::vector<Double_t> fitmaxbumpraw = {750, 800, 800, 770, 790, 780, 750, 760, 770, 770, 760, 780, 760, 770, 750, 750, 760, 770, 770, 770, 770, 760, 760, 760, 750, 740, 770, 760, 760, 750, 760, 750};
+    std::vector<Double_t> fitminbumpcalib = {420, 460, 520, 430, 440, 420, 420, 430, 440, 430, 420, 420, 420, 420, 430, 430, 430, 420, 420, 420, 420, 420, 420, 420, 430, 430, 430, 420, 430, 430, 440, 440};
+    std::vector<Double_t> fitmaxbumpcalib = {720, 760, 820, 730, 740, 720, 720, 730, 740, 730, 720, 720, 720, 720, 730, 730, 730, 720, 720, 720, 720, 720, 720, 720, 730, 730, 730, 720, 730, 730, 740, 740};
+    std::vector<Double_t> fitminbumpcalibcorr = {480, 500, 490, 480, 490, 480, 480, 470,  480, 480, 480, 480, 480, 480, 470, 480,  480, 470, 470, 480, 480, 480, 480, 480,  470, 470, 480, 480, 480, 480, 500, 480};
+    std::vector<Double_t> fitmaxbumpcalibcorr = {700, 720, 710, 690, 700, 690, 690, 690,  690, 690, 690, 690, 690, 690, 690, 690,  690, 690, 690, 690, 690, 690, 690, 690,  690, 690, 700, 690, 690, 690, 710, 690};
+
+    // Spec histograms
+    std::vector<std::vector<TH1D*>> spectra_raw_timed(6, std::vector<TH1D*>(32));
+    std::vector<std::vector<TH1D*>> spectra_calib_timed(6, std::vector<TH1D*>(32));
+    std::vector<std::vector<TH1D*>> spectra_calib_corr_timed(6, std::vector<TH1D*>(32));
+    // Spec fits
+    std::vector<std::vector<TF1*>> spec_raw_fit(6, std::vector<TF1*>(32));
+    std::vector<std::vector<TF1*>> spec_calib_fit(6, std::vector<TF1*>(32));
+    std::vector<std::vector<TF1*>> spec_calib_corr_fit(6, std::vector<TF1*>(32));
+    // Fit calib channels
+    std::vector<std::vector<Double_t>> fit_raw_bump(6, std::vector<Double_t>(32));
+    std::vector<std::vector<Double_t>> fit_raw_bump_err(6, std::vector<Double_t>(32));
+    std::vector<std::vector<Double_t>> fit_calib_bump(6, std::vector<Double_t>(32));
+    std::vector<std::vector<Double_t>> fit_calib_bump_err(6, std::vector<Double_t>(32));
+    std::vector<std::vector<Double_t>> fit_calib_corr_bump(6, std::vector<Double_t>(32));
+    std::vector<std::vector<Double_t>> fit_calib_corr_bump_err(6, std::vector<Double_t>(32));
+    for (size_t i=0; i<6; i++) {
+        for (size_t j=0; j<32; j++) {
+            // Spec histograms
+            spectra_raw_timed[i][j] = new TH1D((std::string("spec_raw_timed") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "Raw ADC spectrum", 1024, 0, 1024);
+            spectra_calib_timed[i][j] = new TH1D((std::string("spec_calib_timed") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "Energy spectrum", 250, 0, 1500);
+            spectra_calib_corr_timed[i][j] = new TH1D((std::string("spec_calib_corr_timed") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "Corr energy spectrum", 250, 0, 1500);
+            // Initializing the calib fits
+            spec_raw_fit[i][j] = new TF1((std::string("gauss_raw_fit") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "gaus", fitminbumpraw[j], fitmaxbumpraw[j]);
+            spec_raw_fit[i][j]->SetLineColor(kRed);
+            // Initializing the calib fits
+            spec_calib_fit[i][j] = new TF1((std::string("gauss_calib_fit") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "gaus", fitminbumpcalib[j], fitmaxbumpcalib[j]);
+            spec_calib_fit[i][j]->SetLineColor(kRed);
+            // Initializing the calib corr fits
+            spec_calib_corr_fit[i][j] = new TF1((std::string("gauss_calib_corr_fit") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "gaus", fitminbumpcalibcorr[j], fitmaxbumpcalibcorr[j]);
+            spec_calib_corr_fit[i][j]->SetLineColor(kRed);
+        }
+    }
+
+    // Filling histograms
+    size_t temp_ite;
+    for (uint64_t i = 0; i < nentries; ++i) {
+        tree_hist->GetEntry(i);
+        if (temperature >= 10) {
+            temp_ite = 0;
+        } else if (temperature < 10 && temperature >= 5) {
+            temp_ite = 1;
+        } else if (temperature < 5 && temperature >= 0) {
+            temp_ite = 2;
+        } else if (temperature < 0 && temperature >= -5) {
+            temp_ite = 3;
+        } else if (temperature < -5 && temperature >= -10) {
+            temp_ite = 4;
+        } else if (temperature < -10) {
+            temp_ite = 5;
+        }
+        for (size_t j=0; j<32; j++) {
+            spectra_raw_timed[temp_ite][j]->Fill(adc_channels[j + 32]);
+            spectra_calib_timed[temp_ite][j]->Fill(adc_channels_calib[j + 32]);
+            spectra_calib_corr_timed[temp_ite][j]->Fill(adc_channels_calib_corr[j + 32]);
+        }
+    }
+
+    // Colors for different energy ranges
+    int colors[6] = {kRed, kBlue, kGreen+2, kMagenta, kOrange, kCyan};
+
+    // ============================================================================
+    // Raw spectra
+    // ============================================================================
+    auto can_n_raw_timed = new TCanvas("Spectra_raw_n_timed", "Raw spectra");
+
+    // Legend area
+    TPad *pad_legend_raw = new TPad("pad_legend_raw", "Legend Pad", 0, 0.92, 1, 1);
+    pad_legend_raw->SetFillColor(0);
+    pad_legend_raw->Draw();
+    pad_legend_raw->cd();
+    pad_legend_raw->Divide(3, 1);
+    std::vector<TLegend*> legend_raw(3);
+    pad_legend_raw->cd(1);
+    legend_raw[0] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_raw[0]->AddEntry(spectra_raw_timed[0][0], "n channels >= 10#circC", "l");
+    legend_raw[0]->AddEntry(spectra_raw_timed[1][0], "n channels 10 - 5#circC", "l");
+    legend_raw[0]->Draw();
+    pad_legend_raw->cd(2);
+    legend_raw[1] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_raw[1]->AddEntry(spectra_raw_timed[2][0], "n channels 5 - 0#circC", "l");
+    legend_raw[1]->AddEntry(spectra_raw_timed[3][0], "n channels 0 - -5#circC", "l");
+    legend_raw[1]->Draw();
+    pad_legend_raw->cd(3);
+    legend_raw[2] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_raw[2]->AddEntry(spectra_raw_timed[4][0], "n channels -5 - -10#circC", "l");
+    legend_raw[2]->AddEntry(spectra_raw_timed[5][0], "n channels < -10#circC", "l");
+    legend_raw[2]->Draw();
+
+    // Histograms area
+    can_n_raw_timed->cd();
+    TPad *pad_hist_raw = new TPad("pad_hist_raw", "Histogram pad", 0, 0, 1, 0.92);
+    pad_hist_raw->Draw();
+    pad_hist_raw->cd();
+    pad_hist_raw->Divide(8, 4, 0.001, 0.001);
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        for (size_t j=0; j<32; j++) {
+            pad_hist_raw->cd(j + 1);
+            spectra_raw_timed[i][j]->SetStats(0);
+            spectra_raw_timed[i][j]->SetLineColor(colors[i]);
+            if (i == 0) {
+                spectra_raw_timed[i][j]->Draw();
+            } else {
+                spectra_raw_timed[i][j]->DrawCopy("same");
+            }
+
+            spectra_raw_timed[i][j]->Fit((std::string("gauss_raw_fit") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "QNR+", "", fitminbumpraw[j], fitmaxbumpraw[j]);
+            fit_raw_bump[i][j] = spec_raw_fit[i][j]->GetParameter(1);
+            fit_raw_bump_err[i][j] = spec_raw_fit[i][j]->GetParError(1);
+            if (show_fit_bump) {
+                spec_raw_fit[i][j]->DrawCopy("same");
+                spectra_raw_timed[i][j]->GetXaxis()->SetRangeUser(fitminbumpraw[j] - 50, fitmaxbumpraw[j] + 50);
+                spectra_raw_timed[i][j]->GetYaxis()->SetRangeUser(50, 1000);
+            } else {
+//                spectra_raw_timed[i][j]->GetXaxis()->SetRangeUser(xlimmin, xlimmax);
+                spectra_raw_timed[i][j]->GetXaxis()->SetRangeUser(fitminbumpraw[j], fitmaxbumpraw[j]);
+            }
+
+            gPad->SetLogy();
+        }
+    }
+    can_n_raw_timed->Update();
+
+    // ============================================================================
+    // Calibrated spectra
+    // ============================================================================
+    auto can_n_calib_timed = new TCanvas("Spectra_calibrated_n_timed", "Spectra calibrated");
+
+    // Legend area
+    TPad *pad_legend_calib = new TPad("pad_legend_calib", "Legend Pad", 0, 0.92, 1, 1);
+    pad_legend_calib->SetFillColor(0);
+    pad_legend_calib->Draw();
+    pad_legend_calib->cd();
+    pad_legend_calib->Divide(3, 1);
+    std::vector<TLegend*> legend_calib(3);
+    pad_legend_calib->cd(1);
+    legend_calib[0] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_calib[0]->AddEntry(spectra_calib_timed[0][0], "n channels >= 10#circC", "l");
+    legend_calib[0]->AddEntry(spectra_calib_timed[1][0], "n channels 10 - 5#circC", "l");
+    legend_calib[0]->Draw();
+    pad_legend_calib->cd(2);
+    legend_calib[1] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_calib[1]->AddEntry(spectra_calib_timed[2][0], "n channels 5 - 0#circC", "l");
+    legend_calib[1]->AddEntry(spectra_calib_timed[3][0], "n channels 0 - -5#circC", "l");
+    legend_calib[1]->Draw();
+    pad_legend_calib->cd(3);
+    legend_calib[2] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_calib[2]->AddEntry(spectra_calib_timed[4][0], "n channels -5 - -10#circC", "l");
+    legend_calib[2]->AddEntry(spectra_calib_timed[5][0], "n channels < -10#circC", "l");
+    legend_calib[2]->Draw();
+
+    // Histograms area
+    can_n_calib_timed->cd();
+    TPad *pad_hist_calib = new TPad("pad_hist_calib", "Histogram pad", 0, 0, 1, 0.92);
+    pad_hist_calib->Draw();
+    pad_hist_calib->cd();
+    pad_hist_calib->Divide(8, 4, 0.001, 0.001);
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        for (size_t j=0; j<32; j++) {
+            pad_hist_calib->cd(j + 1);
+            spectra_calib_timed[i][j]->SetStats(0);
+            spectra_calib_timed[i][j]->GetXaxis()->SetRangeUser(xlimmincalib, xlimmaxcalib);
+            spectra_calib_timed[i][j]->SetLineColor(colors[i]);
+            if (i == 0) {
+                spectra_calib_timed[i][j]->Draw();
+            } else {
+                spectra_calib_timed[i][j]->DrawCopy("same");
+            }
+
+            spectra_calib_timed[i][j]->Fit((std::string("gauss_calib_fit") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "QNR+", "", fitminbumpcalib[j], fitmaxbumpcalib[j]);
+            fit_calib_bump[i][j] = spec_calib_fit[i][j]->GetParameter(1);
+            fit_calib_bump_err[i][j] = spec_calib_fit[i][j]->GetParError(1);
+            if (show_fit_bump) {
+                spec_calib_fit[i][j]->DrawCopy("same");
+                spectra_calib_timed[i][j]->GetXaxis()->SetRangeUser(fitminbumpraw[j] - 50, fitmaxbumpraw[j] + 50);
+                spectra_calib_timed[i][j]->GetYaxis()->SetRangeUser(50, 1000);
+            } else {
+//                spectra_calib_timed[i][j]->GetXaxis()->SetRangeUser(xlimmin, xlimmax);
+                spectra_calib_timed[i][j]->GetXaxis()->SetRangeUser(fitminbumpcalib[j], fitmaxbumpcalib[j]);
+            }
+
+            gPad->SetLogy();
+        }
+    }
+
+    can_n_calib_timed->Update();
+
+    // ============================================================================
+    // Calib corrected spectra
+    // ============================================================================
+    auto can_n_corr_timed = new TCanvas("Spectra_corr_n_timed", "Calib corr spectra");
+
+    // Legend area
+    TPad *pad_legend_corr = new TPad("pad_legend_corr", "Legend Pad", 0, 0.92, 1, 1);
+    pad_legend_corr->SetFillColor(0);
+    pad_legend_corr->Draw();
+    pad_legend_corr->cd();
+    pad_legend_corr->Divide(3, 1);
+    std::vector<TLegend*> legend_corr(3);
+    pad_legend_corr->cd(1);
+    legend_corr[0] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_corr[0]->AddEntry(spectra_calib_corr_timed[0][0], "n channels >= 10#circC", "l");
+    legend_corr[0]->AddEntry(spectra_calib_corr_timed[1][0], "n channels 10 - 5#circC", "l");
+    legend_corr[0]->Draw();
+    pad_legend_corr->cd(2);
+    legend_corr[1] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_corr[1]->AddEntry(spectra_calib_corr_timed[2][0], "n channels 5 - 0#circC", "l");
+    legend_corr[1]->AddEntry(spectra_calib_corr_timed[3][0], "n channels 0 - -5#circC", "l");
+    legend_corr[1]->Draw();
+    pad_legend_corr->cd(3);
+    legend_corr[2] = new TLegend(0.1, 0.1, 0.9, 0.9);
+    legend_corr[2]->AddEntry(spectra_calib_corr_timed[4][0], "n channels -5 - -10#circC", "l");
+    legend_corr[2]->AddEntry(spectra_calib_corr_timed[5][0], "n channels < -10#circC", "l");
+    legend_corr[2]->Draw();
+
+    // Histograms area
+    can_n_corr_timed->cd();
+    TPad *pad_hist_corr = new TPad("pad_hist_corr", "Histogram pad", 0, 0, 1, 0.92);
+    pad_hist_corr->Draw();
+    pad_hist_corr->cd();
+    pad_hist_corr->Divide(8, 4, 0.001, 0.001);
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        for (size_t j=0; j<32; j++) {
+            pad_hist_corr->cd(j + 1);
+            spectra_calib_corr_timed[i][j]->SetStats(0);
+            spectra_calib_corr_timed[i][j]->SetLineColor(colors[i]);
+            if (i == 0) {
+                spectra_calib_corr_timed[i][j]->Draw();
+            } else {
+                spectra_calib_corr_timed[i][j]->DrawCopy("same");
+            }
+            spectra_calib_corr_timed[i][j]->Fit((std::string("gauss_calib_corr_fit") + std::to_string(i) + std::string("_") + std::to_string(j)).c_str(), "QNR+", "", fitminbumpcalibcorr[j], fitmaxbumpcalibcorr[j]);
+            fit_calib_corr_bump[i][j] = spec_calib_corr_fit[i][j]->GetParameter(1);
+            fit_calib_corr_bump_err[i][j] = spec_calib_corr_fit[i][j]->GetParError(1);
+
+            if (show_fit_bump) {
+                spec_calib_corr_fit[i][j]->DrawCopy("same");
+                spectra_calib_corr_timed[i][j]->GetXaxis()->SetRangeUser(fitminbumpcalibcorr[j] - 50, fitminbumpcalibcorr[j] + 50);
+                spectra_calib_corr_timed[i][j]->GetYaxis()->SetRangeUser(100, 1000);
+            } else {
+                spectra_calib_corr_timed[i][j]->GetXaxis()->SetRangeUser(xlimmin, xlimmax);
+            }
+
+            gPad->SetLogy();
+        }
+    }
+    can_n_corr_timed->Update();
+
+
+    std::vector<std::string> temp_str = {">10", "10-5", "5-0", "0--5", "-5--10", "<-10"};
+    for (size_t j=0; j<32; j++) {
+        for (size_t i=0; i<6; i++) {
+            std::cout << "Bump raw mean, channel : " << j << "  -  " << fit_raw_bump[i][j] << "+-" << fit_raw_bump_err[i][j] << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    // Open the bump and peak fit files
+    std::ofstream bump_file("./Kiruna_data/calib_dssd/fit_raw_bump.txt");
+    if (bump_file.is_open()) {
+        for (size_t j = 0; j < 32; j++) {
+            for (size_t i = 0; i < 6; i++) {
+                bump_file << fit_raw_bump[i][j];
+                if (i < 5) {
+                    bump_file << " ";
+                } else {
+                    bump_file << "|";
+                }
+            }
+            for (size_t i = 0; i < 6; i++) {
+                bump_file << fit_raw_bump_err[i][j];
+                if (i < 5) {
+                    bump_file << " ";
+                }
+            }
+
+            bump_file << "\n";
+        }
+        bump_file.close();
+        std::cout << "Bump fit data saved in fit_bump.txt\n";
+    } else {
+        std::cerr << "Error : file not opening !\n";
+    }
+
+    for (size_t j=0; j<32; j++) {
+        for (size_t i=0; i<6; i++) {
+            std::cout << "Bump calib at 25°C, channel : " << j << "  -  " << fit_calib_bump[i][j] << "+-" << fit_calib_bump_err[i][j] << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    // Open the bump and peak fit files
+    std::ofstream bump_calib_file("./Kiruna_data/calib_dssd/fit_calib_bump.txt");
+    if (bump_calib_file.is_open()) {
+        for (size_t j = 0; j < 32; j++) {
+            for (size_t i = 0; i < 6; i++) {
+                bump_calib_file << fit_calib_bump[i][j];
+                if (i < 5) {
+                    bump_calib_file << " ";
+                } else {
+                    bump_calib_file << "|";
+                }
+            }
+            for (size_t i = 0; i < 6; i++) {
+                bump_calib_file << fit_calib_bump_err[i][j];
+                if (i < 5) {
+                    bump_calib_file << " ";
+                }
+            }
+
+            bump_calib_file << "\n";
+        }
+        bump_calib_file.close();
+        std::cout << "Bump fit data saved in fit_calib_bump.txt\n";
+    } else {
+        std::cerr << "Error : file not opening !\n";
+    }
+
+    for (size_t j=0; j<32; j++) {
+        for (size_t i=0; i<6; i++) {
+            std::cout << "Bump mean at detection temperature : " << temp_str[i] << " channel : " << j << "  -  " << fit_calib_corr_bump[i][j] << "+-" << fit_calib_corr_bump_err[i][j] << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    // Open the corr_bump and corr_peak fit files
+    std::ofstream bump_corr_file("./Kiruna_data/calib_dssd/fit_calib_corr_bump.txt");
+    if (bump_corr_file.is_open()) {
+        for (size_t j = 0; j < 32; j++) {
+            for (size_t i = 0; i < 6; i++) {
+                bump_corr_file << fit_calib_corr_bump[i][j];
+                if (i < 5) {
+                    bump_corr_file << " ";
+                } else {
+                    bump_corr_file << "|";
+                }
+            }
+            for (size_t i = 0; i < 6; i++) {
+                bump_corr_file << fit_calib_corr_bump_err[i][j];
+                if (i < 5) {
+                    bump_corr_file << " ";
+                }
+            }
+
+            bump_corr_file << "\n";
+        }
+        bump_corr_file.close();
+        std::cout << "Bump corr fit data saved in fit_corr_bump.txt\n";
+    } else {
+        std::cerr << "Error : file not opening !\n";
+    }
+
+
+    // ============================================================================
+    // For the manuscript !
+    // ============================================================================
+    size_t specite = 20;
+
+    // ============================================================================
+    // Raw spectra
+    // ============================================================================
+    auto can_chani_raw = new TCanvas((std::string("Spectra_chan") + std::to_string(specite) + std::string("_raw")).c_str(), "Raw spectrum", 900, 600);
+
+    // Legend area
+    TPad *pad_legend_raw_i = new TPad("pad_legend_rawi", "Legend Padi", 0, 0.9, 1, 1);
+    pad_legend_raw_i->SetFillColor(0);
+    pad_legend_raw_i->Draw();
+    pad_legend_raw_i->cd();
+    pad_legend_raw_i->Divide(3, 1);
+    pad_legend_raw_i->cd(1);
+    legend_raw[0]->SetTextSize(0.33);
+    legend_raw[0]->Draw();
+    pad_legend_raw_i->cd(2);
+    legend_raw[1]->SetTextSize(0.33);
+    legend_raw[1]->Draw();
+    pad_legend_raw_i->cd(3);
+    legend_raw[2]->SetTextSize(0.33);
+    legend_raw[2]->Draw();
+
+    // Histograms area
+    can_chani_raw->cd();
+    TPad *pad_histi_raw = new TPad("pad_histi_raw", "Histogram pad", 0, 0, 1, 0.9);
+    pad_histi_raw->Draw();
+    pad_histi_raw->cd();
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        spectra_raw_timed[i][specite]->SetStats(0);
+        spectra_raw_timed[i][specite]->GetXaxis()->SetRangeUser(0, 1024);
+        spectra_raw_timed[i][specite]->SetLineColor(colors[i]);
+        spectra_raw_timed[i][specite]->GetXaxis()->SetTitleSize(0.045);
+        spectra_raw_timed[i][specite]->GetYaxis()->SetTitleSize(0.045);
+        spectra_raw_timed[i][specite]->GetXaxis()->SetLabelSize(0.04);
+        spectra_raw_timed[i][specite]->GetYaxis()->SetLabelSize(0.04);
+        spectra_raw_timed[i][specite]->GetXaxis()->SetTitle("Energy (ADC)");
+        spectra_raw_timed[i][specite]->GetYaxis()->SetTitle("Number of events");
+        spectra_raw_timed[i][specite]->SetTitle("");
+        gPad->SetTopMargin(0.05);
+
+        if (i == 0) {
+            spectra_raw_timed[i][specite]->Draw();
+        } else {
+            spectra_raw_timed[i][specite]->DrawCopy("same");
+        }
+        spectra_raw_timed[i][specite]->Fit((std::string("gauss_fit") + std::to_string(i) + std::string("_") + std::to_string(specite)).c_str(), "QNR+", "", fitminbumpraw[specite], fitmaxbumpraw[specite]);
+//        fit_bump[i][specite] = spec_raw_fit[i][specite]->GetParameter(1);
+//        fit_bump_err[i][specite] = spec_raw_fit[i][specite]->GetParError(1);
+        gPad->SetLogy();
+    }
+    can_chani_raw->Update();
+
+    // ============================================================================
+    // Calibrated spectra
+    // ============================================================================
+    auto can_chani_calib = new TCanvas((std::string("Spectra_chan") + std::to_string(specite) + std::string("_calib")).c_str(), "Spectrum calibrated", 900, 600);
+
+    // Legend area
+    TPad *pad_legend_calib_i = new TPad("pad_legend_calib", "Legend Pad", 0, 0.9, 1, 1);
+    pad_legend_calib_i->SetFillColor(0);
+    pad_legend_calib_i->Draw();
+    pad_legend_calib_i->cd();
+    pad_legend_calib_i->Divide(3, 1);
+    pad_legend_calib_i->cd(1);
+    legend_calib[0]->SetTextSize(0.33);
+    legend_calib[0]->Draw();
+    pad_legend_calib_i->cd(2);
+    legend_calib[1]->SetTextSize(0.33);
+    legend_calib[1]->Draw();
+    pad_legend_calib_i->cd(3);
+    legend_calib[2]->SetTextSize(0.33);
+    legend_calib[2]->Draw();
+
+    // Histograms area
+    can_chani_calib->cd();
+    TPad *pad_histi_calib = new TPad("pad_histi_calib", "Histogram i pad", 0, 0, 1, 0.9);
+    pad_histi_calib->Draw();
+    pad_histi_calib->cd();
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        spectra_calib_timed[i][specite]->SetStats(0);
+        spectra_calib_timed[i][specite]->GetXaxis()->SetRangeUser(xlimmin, xlimmax);
+        spectra_calib_timed[i][specite]->SetLineColor(colors[i]);
+        spectra_calib_timed[i][specite]->GetXaxis()->SetTitleSize(0.045);
+        spectra_calib_timed[i][specite]->GetYaxis()->SetTitleSize(0.045);
+        spectra_calib_timed[i][specite]->GetXaxis()->SetLabelSize(0.04);
+        spectra_calib_timed[i][specite]->GetYaxis()->SetLabelSize(0.04);
+        spectra_calib_timed[i][specite]->GetXaxis()->SetTitle("Energy (keV)");
+        spectra_calib_timed[i][specite]->GetYaxis()->SetTitle("Number of events");
+        spectra_calib_timed[i][specite]->SetTitle("");
+        gPad->SetTopMargin(0.05);
+        if (i == 0) {
+            spectra_calib_timed[i][specite]->Draw();
+        } else {
+            spectra_calib_timed[i][specite]->DrawCopy("same");
+        }
+        gPad->SetLogy();
+    }
+    can_chani_calib->Update();
+
+    // ============================================================================
+    // Calibrated corrected spectra
+    // ============================================================================
+    auto can_chani_calibcorr = new TCanvas((std::string("Spectra_chan") + std::to_string(specite) + std::string("_calibcorr")).c_str(), "Spectrum calibrated corr", 900, 600);
+
+    // Legend area
+    TPad *pad_legend_calibcorr_i = new TPad("pad_legend_calibcorr", "Legend Pad", 0, 0.9, 1, 1);
+    pad_legend_calibcorr_i->SetFillColor(0);
+    pad_legend_calibcorr_i->Draw();
+    pad_legend_calibcorr_i->cd();
+    pad_legend_calibcorr_i->Divide(3, 1);
+    pad_legend_calibcorr_i->cd(1);
+    legend_corr[0]->SetTextSize(0.33);
+    legend_corr[0]->Draw();
+    pad_legend_calibcorr_i->cd(2);
+    legend_corr[1]->SetTextSize(0.33);
+    legend_corr[1]->Draw();
+    pad_legend_calibcorr_i->cd(3);
+    legend_corr[2]->SetTextSize(0.33);
+    legend_corr[2]->Draw();
+
+    // Histograms area
+    can_chani_calibcorr->cd();
+    TPad *pad_histi_calibcorr = new TPad("pad_histi_calibcorr", "Histogram i pad", 0, 0, 1, 0.9);
+    pad_histi_calibcorr->Draw();
+    pad_histi_calibcorr->cd();
+
+    // Drawing the different spectra on different pads
+    for (size_t i=0; i<6; i++) {
+        spectra_calib_corr_timed[i][specite]->SetStats(0);
+        spectra_calib_corr_timed[i][specite]->GetXaxis()->SetRangeUser(xlimmin, xlimmax);
+        spectra_calib_corr_timed[i][specite]->SetLineColor(colors[i]);
+        spectra_calib_corr_timed[i][specite]->GetXaxis()->SetTitleSize(0.045);
+        spectra_calib_corr_timed[i][specite]->GetYaxis()->SetTitleSize(0.045);
+        spectra_calib_corr_timed[i][specite]->GetXaxis()->SetLabelSize(0.04);
+        spectra_calib_corr_timed[i][specite]->GetYaxis()->SetLabelSize(0.04);
+        spectra_calib_corr_timed[i][specite]->GetXaxis()->SetTitle("Energy (keV)");
+        spectra_calib_corr_timed[i][specite]->GetYaxis()->SetTitle("Number of events");
+        spectra_calib_corr_timed[i][specite]->SetTitle("");
+        gPad->SetTopMargin(0.05);
+        if (i == 0) {
+            spectra_calib_corr_timed[i][specite]->Draw();
+        } else {
+            spectra_calib_corr_timed[i][specite]->DrawCopy("same");
+        }
+        gPad->SetLogy();
+    }
+    can_chani_calibcorr->Update();
+
+    DisplayApp.Run();
 }
