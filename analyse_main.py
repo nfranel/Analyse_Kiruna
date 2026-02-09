@@ -1,9 +1,23 @@
+# conda install -c conda-forge numpy matplotlib scipy pandas uproot memory_profiler pyqt
+
+
 from Analyze_rootfiles import KirunaAnalysis, fit_maud_511, fit_quad_calib
 import matplotlib.pyplot as plt
 import numpy as np
+# detlist = ["ucda", "maud"]
+detlist = None
+# opening_mode = "compton"
+opening_mode = "full"
+init_date = [2024, 6, 23, 12, 0, 0]
+end_date = [2024, 6, 23, 16, 0, 0]
+analysis = KirunaAnalysis(opening_mode=opening_mode, detlist=detlist, compressed=True, init_date=init_date, end_date=end_date)
 
-# conda install -c conda-forge numpy matplotlib scipy pandas uproot memory_profiler pyqt
+# print(analysis.data.dtypes)
 
+
+from Analyze_rootfiles import KirunaAnalysis, fit_maud_511, fit_quad_calib
+import matplotlib.pyplot as plt
+import numpy as np
 detlist = ["ucda", "ucdb", "ucdc", "ucdd", "maud"]
 # opening_mode = "compton"
 opening_mode = "spectro"

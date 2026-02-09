@@ -23,7 +23,7 @@ class KirunaAnalysis:
     """
     Class containing Kiruna data and method to easily manipulate them
     """
-    def __init__(self, datafile="./kiruna_tree.root", detlist=None, opening_mode="compton"):
+    def __init__(self, datafile="./kiruna_tree.root", detlist=None, opening_mode="compton", init_date=[2024, 6, 22, 21, 0, 0], end_date=None, compressed=True):
         """
 
         :param d2b_datafile:
@@ -41,6 +41,10 @@ class KirunaAnalysis:
                         "ucdc": ["ucdc_time", "ucdc_energy", "ucdc_posx", "ucdc_posy", "ucdc_posz"],
                         "ucdd": ["ucdd_time", "ucdd_energy", "ucdd_posx", "ucdd_posy", "ucdd_posz"],
                         "maud": ["maud_time", "maud_energy", "maud_posx", "maud_posy", "maud_posz"]}
+            if compressed:
+                data_dtype = ["float64", "float32", "float32", "float32", "float32"]
+            else:
+                data_dtype = ["float64", "float64", "float64", "float64", "float64"]
             len_filtering = [2]
         elif opening_mode == "spectro":
             det_keys = {"cea": ["cea_time", "cea_energy"],
@@ -50,6 +54,10 @@ class KirunaAnalysis:
                         "ucdc": ["ucdc_time", "ucdc_energy"],
                         "ucdd": ["ucdd_time", "ucdd_energy"],
                         "maud": ["maud_time", "maud_energy"]}
+            if compressed:
+                data_dtype = ["float64", "float32"]
+            else:
+                data_dtype = ["float64", "float64"]
             len_filtering = [1, 2]
         elif opening_mode == "full":
             det_keys = {"cea": ["cea_time", "cea_energy", "cea_posx", "cea_posy", "cea_posz"],
@@ -59,6 +67,10 @@ class KirunaAnalysis:
                         "ucdc": ["ucdc_time", "ucdc_energy", "ucdc_posx", "ucdc_posy", "ucdc_posz"],
                         "ucdd": ["ucdd_time", "ucdd_energy", "ucdd_posx", "ucdd_posy", "ucdd_posz"],
                         "maud": ["maud_time", "maud_energy", "maud_posx", "maud_posy", "maud_posz"]}
+            if compressed:
+                data_dtype = ["float64", "float32", "float32", "float32", "float32"]
+            else:
+                data_dtype = ["float64", "float64", "float64", "float64", "float64"]
             len_filtering = [1, 2]
         else:
             raise KeyError("Expected keys are compton, spectro or full")
@@ -68,28 +80,49 @@ class KirunaAnalysis:
 
         self.len_filtering = len_filtering
         self.data = None
+        self.datafile = datafile
+        self.compression = compressed
+
+        # - Set the columns to keep in the DataFrame
+        # - Define the names of the time and energy columns
+        # - Set the type of the columns
         self.saved_columns = ["event_len"]
         self.time_keys = []
         self.energy_keys = []
+        self.data_dtype = {}
         for det in detlist:
             self.saved_columns += det_keys[det]
             self.time_keys.append(det_keys[det][0])
             self.energy_keys.append(det_keys[det][1])
+            for item_ite, item in enumerate(det_keys[det]):
+                self.data_dtype[item] = data_dtype[item_ite]
 
-        self.datafile = datafile
-        # Number of the first entry after the date 22 June 2024 at 9:00PM
-        self.init_event = 1171752
-        # self.init_event = 0
-        self.final_event = None
+        if init_date is None:
+            # Number of the first entry after the date 22 June 2024 at 9:00PM
+            self.init_time = None
+        else:
+            try:
+                self.init_time = datetime(*init_date).timestamp() - self.timeref
+            except:
+                raise KeyError("init_date must be of the shape [year, month, day, hour, min, sec]")
 
-        self.init_ts = None
-        self.final_ts = None
-        self.init_date = None
-        self.final_date = None
+        if end_date is None:
+            self.final_time = None
+        else:
+            try:
+                self.final_time = datetime(*end_date).timestamp() - self.timeref + 1
+            except:
+                raise KeyError("end_date must be of the shape [year, month, day, hour, min, sec]")
 
+        # Get the entry index of the
+        self.init_entry = None
+        self.final_entry = None
+        self.get_init_final_entries()
+
+        # Set up the initial energy cut
         self.energy_cutted = (0, 1e8)
 
-        # Mean flux of 0.3 ph/s but emission every 0.03 sec : mean num of ph emited per pulsation : 0.3*0.03 = 0.009
+        # Mean flux of 0.3 ph/s but emission every 0.03 sec : mean num of ph emitted per pulsation : 0.3*0.03 = 0.009
         self.crab_flux = 0.02
         self.crab_period = 33.9e-3
         self.crab_frequency = round(1 / self.crab_period, 3)
@@ -110,17 +143,46 @@ class KirunaAnalysis:
         # Set the time and energy items
         self.set_ener_time()
 
+    def get_init_final_entries(self):
+        with uproot.open(self.datafile) as file:
+            tree = file["Events"]
+            # Load event times
+            temp_times = pd.concat([chunk.replace(-999, np.nan).mean(axis=1) for chunk in tree.iterate(self.time_keys, library="pd", step_size="200 MB")], ignore_index=True)
+            time_vec = temp_times[~np.isnan(temp_times)]
+
+            if self.init_time is None:
+                self.init_entry = None
+            else:
+                modif_time = time_vec - self.init_time
+                modif_time = modif_time[modif_time >= 0]
+                self.init_entry = modif_time.index[0]
+
+                # init_rank = modif_time[modif_time >= 0]
+                # self.init_entry = time_vec.index[init_rank]
+                # # VERIF
+                # print("verif init")
+                # print("limit : ", self.init_time)
+                # print("value at the found index : ", time_vec.loc[self.init_entry])
+                # print(time_vec.loc[self.init_entry-1:self.init_entry+2])
+
+            if self.final_time is None:
+                self.final_entry = None
+            else:
+                modif_time = time_vec - self.final_time
+                modif_time = modif_time[modif_time <= 0]
+                self.final_entry = modif_time.index[-1]
+                # # VERIF
+                # print("verif final")
+                # print("limit : ", self.final_time)
+                # print("value at the found index : ", time_vec.loc[self.final_entry])
+                # print(time_vec.loc[self.final_entry-1:self.final_entry+2])
+
     def load_data(self, memory_used=False):
         """
         Extract the kiruna df from a rootfile
         :return:
         """
         with uproot.open(self.datafile) as file:
-            # here, file is a TDirectory, you can display the content with :
-            # print(file.keys())
-            # You can have even more detail on what the key is with :
-            # print(file.classnames())
-            # Accessing the tree
             if memory_used:
                 print("Memory 1 : ", memory_usage(), " MB")
             tree = file["Events"]
@@ -129,7 +191,7 @@ class KirunaAnalysis:
 
             # convert the tree in dataframe
             # self.data = pd.concat(self.load_precision(tree, compressed=True), ignore_index=True)
-            self.data = pd.concat([chunk[np.isin(chunk.event_len, self.len_filtering)] for chunk in tree.iterate(self.saved_columns, step_size=100000, entry_start=self.init_event, entry_stop=self.final_event, library="pd")], ignore_index=True)
+            self.data = pd.concat([chunk[np.isin(chunk.event_len, self.len_filtering)].astype(self.data_dtype) for chunk in tree.iterate(self.saved_columns, step_size="200 MB", entry_start=self.init_entry, entry_stop=self.final_entry, library="pd")], ignore_index=True)
             if memory_used:
                 print("df memory : ", self.data.memory_usage(deep=True))
                 print("Memory 3 : ", memory_usage(), " MB")
@@ -138,10 +200,10 @@ class KirunaAnalysis:
         # Getting rid of unwanted values
         self.data = self.data[~self.data[self.time_keys].isna().all(axis=1)]
 
-        self.init_time = 3600
-        self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[~np.isnan(self.data.iloc[-1][self.time_keys].values)])
-        self.init_date = datetime.fromtimestamp(int(self.init_time) + self.timeref)
-        self.final_date = datetime.fromtimestamp(int(self.final_time) + self.timeref)
+        # self.init_time = 3600
+        # self.final_time = np.max(self.data.iloc[-1][self.time_keys].values[~np.isnan(self.data.iloc[-1][self.time_keys].values)])
+        # self.init_time = datetime.fromtimestamp(int(self.init_time) + self.timeref)
+        # self.final_time = datetime.fromtimestamp(int(self.final_time) + self.timeref)
 
     def load_precision(self, tree, compressed=True):
         """
@@ -153,7 +215,7 @@ class KirunaAnalysis:
         if compressed:
             list_chunks = []
             # Data are loaded using np arrays to prevent from affecting data into float64 and wasting memory
-            for arrays in tree.iterate(self.saved_columns, step_size=100000, entry_start=self.init_event, entry_stop=self.final_event, library="np"):
+            for arrays in tree.iterate(self.saved_columns, step_size="200 MB", entry_start=self.init_entry, entry_stop=self.final_entry, library="np"):
                 for col in arrays:
                     if col != "event_len":
                         arrays[col] = arrays[col].astype(np.float32)
@@ -161,7 +223,7 @@ class KirunaAnalysis:
                 list_chunks.append(temp_df[np.isin(temp_df.event_len, self.len_filtering)])
             return list_chunks
         else:
-            return [chunk[np.isin(chunk.event_len, self.len_filtering)] for chunk in tree.iterate(self.saved_columns, step_size=100000, entry_start=self.init_event, entry_stop=self.final_event, library="pd")]
+            return [chunk[np.isin(chunk.event_len, self.len_filtering)] for chunk in tree.iterate(self.saved_columns, step_size="200 MB", entry_start=self.init_entry, entry_stop=self.final_entry, library="pd")]
 
     def set_ener_time(self):
         """
@@ -952,7 +1014,7 @@ def full_fit_maud_511(filename="corr_abs_maud_filevtemp.root", xlog="linear", yl
         saved_columns = ["time_corr_abs", "energy"]
 
         # convert the tree in dataframe
-        data = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size=100000, library="pd")], ignore_index=True)
+        data = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size="200 MB", library="pd")], ignore_index=True)
 
     ylab = "Number of event in D2B"
 
@@ -1040,7 +1102,7 @@ def fit_maud_511(filename="corr_abs_maud_filev2.root", graphs=True, begin=None, 
         saved_columns = ["time_corr_abs", "pps_cpt_corr_abs", "energy"]
 
         # convert the tree in dataframe
-        data = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size=100000, library="pd")], ignore_index=True)
+        data = pd.concat([chunk for chunk in tree.iterate(saved_columns, step_size="200 MB", library="pd")], ignore_index=True)
 
     timeref = datetime(2024, 6, 22, 20, 0, 0).timestamp()
     init_time = np.min(data["time_corr_abs"].values)
@@ -1360,7 +1422,7 @@ def show_dssd_temp_dependance(file_bulk="./Kiruna_data/calib_dssd/fit_bulk.txt",
 
     with uproot.open("./corr_abs_dssd_file.root") as file:
         tree = file["Events"]
-        df = pd.concat([chunk for chunk in tree.iterate(["time_corr_abs", "energy", "temperature"], step_size=1000000, library="pd")],
+        df = pd.concat([chunk for chunk in tree.iterate(["time_corr_abs", "energy", "temperature"], step_size="200 MB", library="pd")],
                        ignore_index=True)
 
     fig_temp, axes = plt.subplots(2, 3, figsize=(18, 12))

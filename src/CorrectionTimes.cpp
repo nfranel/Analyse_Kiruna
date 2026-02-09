@@ -2842,12 +2842,11 @@ void MakeWholeDataTree(const std::string &fname_final_tree, const std::string &f
 //    std::array<std::reference_wrapper<std::array<Double_t, 5>>, 7> event_values = {
 //    cea_vals, dssd_vals, ucda_vals, ucdb_vals, ucdc_vals, ucdd_vals, maud_vals};
 
-    // Combining the UCD trees
+    // Combining the trees
     std::vector<Double_t> timevec;
     std::vector<uint64_t> det_id;
     std::vector<uint64_t> det_tree_index;
     timevec.reserve(detectorTrees[0].nentry + detectorTrees[1].nentry + detectorTrees[2].nentry + detectorTrees[3].nentry);
-
     for (size_t ite_det = 0; ite_det<4; ++ite_det) {
 //        std::cout << "DET : " << ite_det << std::endl;
         for (uint64_t i = 0; i<detectorTrees[ite_det].nentry; ++i) {

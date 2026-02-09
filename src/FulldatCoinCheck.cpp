@@ -93,7 +93,7 @@ int main()
     std::cout << "=======================================================================================" << std::endl;
     uint32_t glitch_corr_count_cea = 0;
     uint32_t minor_corr_count_cea = 0;
-//    CorrectTimesCEA(fname_cea, fname_cea_corr, glitch_corr_count_cea, minor_corr_count_cea);
+////    CorrectTimesCEA(fname_cea, fname_cea_corr, glitch_corr_count_cea, minor_corr_count_cea);
     std::cout << " Correction done ! "<< std::endl;
 
 
@@ -108,7 +108,7 @@ int main()
     int32_t abs_gps_time_ref = 1719079200;
     int32_t abs_pps_time_ref = 18531;
     std::cout << "\n=======================================================================================" << std::endl;
-    std::cout << " Absolute time origin is set the 23rd of june 20:00:00  :   " << abs_gps_time_ref << std::endl;
+    std::cout << " Absolute time origin is set the 22nd of june 20:00:00  :   " << abs_gps_time_ref << std::endl;
     std::cout << " Time correction to the GPS time is :   " << abs_gps_time_ref << std::endl;
     std::cout << " This value was chosen so that no event has a GPS or PPS time < 0" << std::endl;
     std::cout << "=======================================================================================" << std::endl;
@@ -118,22 +118,22 @@ int main()
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Aligning Maud with time origin "<< std::endl;
-//    const std::string fname_maud_corr_absv2 = "corr_abs_maud_filevuncorr.root";
-//    const std::string fname_maud_corr_absv2 = "corr_abs_maud_filevtemp.root";
-//    ChangeTimeOriginIJCLAB(fname_maud_corr, fname_maud_corr_absv2, "maud", abs_gps_time_ref);
+////    const std::string fname_maud_corr_absv2 = "corr_abs_maud_filevuncorr.root";
+////    const std::string fname_maud_corr_absv2 = "corr_abs_maud_filevtemp.root";
+////    ChangeTimeOriginIJCLAB(fname_maud_corr, fname_maud_corr_absv2, "maud", abs_gps_time_ref);
 //    ChangeTimeOriginIJCLAB(fname_maud_corr, fname_maud_corr_abs, "maud", abs_gps_time_ref);
     std::cout << " Time origin set ! "<< std::endl;
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Aligning DSSD with time origin "<< std::endl;
 //    ChangeTimeOriginIJCLAB(fname_dssd_corr, fname_dssd_corr_abs, "dssd", abs_gps_time_ref);
-    DisplayDSSDChannels2(fname_dssd_corr_abs);
+//    DisplayDSSDChannels2(fname_dssd_corr_abs);
     std::cout << " Time origin set ! "<< std::endl;
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Aligning CEA with time origin "<< std::endl;
-//    ChangeTimeOriginCEA(fname_cea_corr, fname_cea_corr_abs, abs_pps_time_ref);
-//    DisplayCEAChannels(fname_cea_corr_abs);
+////    ChangeTimeOriginCEA(fname_cea_corr, fname_cea_corr_abs, abs_pps_time_ref);
+////    DisplayCEAChannels(fname_cea_corr_abs);
     std::cout << " Time origin set ! "<< std::endl;
 
     std::cout << "=======================================================================================" << std::endl;
@@ -163,10 +163,10 @@ int main()
 
     std::cout << "=======================================================================================" << std::endl;
     std::cout << "       Creating the full data tree "<< std::endl;
-//    MakeWholeDataTree(fname_final_tree, fname_cea_corr_abs, fname_dssd_corr_abs, fname_ucd_corr_abs, fname_maud_corr_abs);
+    MakeWholeDataTree(fname_final_tree, fname_cea_corr_abs, fname_dssd_corr_abs, fname_ucd_corr_abs, fname_maud_corr_abs);
     std::cout << " Whole data file created ! "<< std::endl;
 
-//    std::exit(EXIT_SUCCESS);
+    std::exit(EXIT_SUCCESS);
 
 // ====================================================================================================
 // Making the coincidences and possibly printing the delay between events
